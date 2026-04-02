@@ -10,14 +10,13 @@ import {
 
 const incomingView = document.getElementById("incomingView");
 const receiverCallView = document.getElementById("receiverCallView");
-const clientPhoto = document.getElementById("clientPhoto");
-const clientInitial = document.getElementById("clientInitial");
+const clientPhotoBg = document.getElementById("clientPhotoBg");
 const clientName = document.getElementById("clientName");
+const incomingInfo = document.getElementById("incomingInfo");
 const incomingBanner = document.getElementById("incomingBanner");
-const declineBtn = document.getElementById("declineBtn");
 const receiverCallTimer = document.getElementById("receiverCallTimer");
 const receiverCallStatus = document.getElementById("receiverCallStatus");
-const receiverBanner = document.getElementById("receiverBanner");
+const receiverBanner2 = document.getElementById("receiverBanner2");
 
 const inviteToken = location.pathname.split("/").pop();
 let currentSession = null;
@@ -28,9 +27,10 @@ let micStream = null;
 let remoteAudio = null;
 let timerId = null;
 let makingOffer = false;
-let ringerOscillators = [];
 let ringerAudioContext = null;
+let ringerInterval = null;
 let answered = false;
+let shakeInterval = null;
 
 init();
 
@@ -42,8 +42,7 @@ async function init() {
     connectSocket();
     setupSwipeControl(document.getElementById("acceptSwipe"), acceptCall);
     setupSwipeControl(document.getElementById("endSwipe"), () => endConversation("ended_by_receiver"));
-    declineBtn.addEventListener("click", () => endConversation("declined_by_receiver"));
-    startRingtone();
+    startRinging();
   } catch (error) {
     incomingBanner.textContent = error.message || "Ссылка недоступна";
   }
@@ -51,12 +50,65 @@ async function init() {
 
 function renderInvite() {
   clientName.textContent = currentSession.clientName;
-  clientInitial.textContent = currentSession.clientName.slice(0, 1).toUpperCase();
   if (currentSession.clientPhotoUrl) {
-    clientPhoto.src = currentSession.clientPhotoUrl;
-    clientPhoto.classList.remove("hidden");
-    clientInitial.classList.add("hidden");
+    clientPhotoBg.src = currentSession.clientPhotoUrl;
   }
+}
+
+function startRinging() {
+  // Start shake animation on the info block
+  incomingInfo.classList.add("shaking");
+
+  // Start ringtone sound synced with shake pulses
+  try {
+    ringerAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+  } catch {
+    // Audio not available
+  }
+
+  const ringBurst = () => {
+    if (answered || !ringerAudioContext) return;
+    const now = ringerAudioContext.currentTime;
+    // Two short beeps per burst
+    [0, 0.15].forEach((offset) => {
+      const osc = ringerAudioContext.createOscillator();
+      const gain = ringerAudioContext.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.06, now + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.12);
+      osc.connect(gain).connect(ringerAudioContext.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.13);
+    });
+  };
+
+  // Shake: 600ms shake, 1200ms pause = 1800ms cycle
+  // Sync sound with shake start
+  ringBurst();
+  ringerInterval = setInterval(() => {
+    if (answered) {
+      clearInterval(ringerInterval);
+      return;
+    }
+    ringBurst();
+    // Re-trigger shake animation
+    incomingInfo.classList.remove("shaking");
+    void incomingInfo.offsetWidth; // force reflow
+    incomingInfo.classList.add("shaking");
+  }, 1800);
+}
+
+function stopRinging() {
+  answered = true;
+  incomingInfo.classList.remove("shaking");
+  if (ringerInterval) {
+    clearInterval(ringerInterval);
+    ringerInterval = null;
+  }
+  ringerAudioContext?.close?.().catch(() => {});
+  ringerAudioContext = null;
 }
 
 function connectSocket() {
@@ -68,13 +120,13 @@ function connectSocket() {
         currentSession = message.session;
         if (["ended", "expired", "failed", "cancelled"].includes(currentSession.status)) {
           await teardownMedia();
-          receiverBanner.textContent = "Собеседник завершил разговор.";
+          receiverBanner2.textContent = "Собеседник завершил разговор.";
         }
       }
       if (message.type === "session.ended") {
         currentSession = message.session;
         await teardownMedia();
-        receiverBanner.textContent = "Собеседник завершил разговор.";
+        receiverBanner2.textContent = "Собеседник завершил разговор.";
       }
       if (message.type === "peer.signal") {
         await handlePeerSignal(message.payload);
@@ -139,9 +191,8 @@ function setupSwipeControl(root, onComplete) {
 
 async function acceptCall() {
   if (answered) return;
-  answered = true;
-  stopRingtone();
-  incomingBanner.textContent = "Разрешите микрофон. После этого разговор запустится автоматически.";
+  stopRinging();
+  incomingBanner.textContent = "Разрешите микрофон...";
 
   try {
     await ensureMic();
@@ -156,7 +207,7 @@ async function acceptCall() {
     incomingView.classList.add("hidden");
     receiverCallView.classList.remove("hidden");
     receiverCallStatus.textContent = "Подключение";
-    receiverBanner.textContent = "Запускаем перевод и аудиоканал.";
+    receiverBanner2.textContent = "Запускаем перевод и аудиоканал.";
 
     await ensurePeerConnection(false);
     const token = await bootstrapRealtime({
@@ -172,7 +223,7 @@ async function acceptCall() {
         await attachTranslatedTrack(stream, track);
       },
       onState: (state) => {
-        receiverBanner.textContent = state === "connected" ? "Перевод идёт автоматически." : `OpenAI: ${state}`;
+        receiverBanner2.textContent = state === "connected" ? "Перевод идёт автоматически." : `OpenAI: ${state}`;
       },
     });
 
@@ -203,7 +254,7 @@ async function ensurePeerConnection(isInitiator) {
   peerPc.addEventListener("track", (event) => {
     remoteAudio = attachRemoteAudio(event.streams[0] || event.track);
     receiverCallStatus.textContent = "Разговор";
-    receiverBanner.textContent = "Собеседник на линии.";
+    receiverBanner2.textContent = "Собеседник на линии.";
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
 
@@ -270,7 +321,7 @@ function stopTimer() {
 }
 
 async function endConversation(reason) {
-  stopRingtone();
+  stopRinging();
   if (currentSession) {
     await fetchJson("/api/session/end", {
       method: "POST",
@@ -278,7 +329,7 @@ async function endConversation(reason) {
     }).catch(() => {});
   }
   await teardownMedia();
-  receiverBanner.textContent = reason === "declined_by_receiver" ? "Разговор отклонён." : "Разговор завершён.";
+  receiverBanner2.textContent = reason === "declined_by_receiver" ? "Разговор отклонён." : "Разговор завершён.";
 }
 
 async function teardownMedia() {
@@ -292,38 +343,4 @@ async function teardownMedia() {
   }
   remoteAudio?.remove();
   remoteAudio = null;
-}
-
-function startRingtone() {
-  try {
-    ringerAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const scheduleBurst = () => {
-      if (answered || !ringerAudioContext) return;
-      const now = ringerAudioContext.currentTime;
-      [0, 0.28].forEach((offset) => {
-        const oscillator = ringerAudioContext.createOscillator();
-        const gain = ringerAudioContext.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.value = 880;
-        gain.gain.setValueAtTime(0.0001, now + offset);
-        gain.gain.exponentialRampToValueAtTime(0.05, now + offset + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.19);
-        oscillator.connect(gain).connect(ringerAudioContext.destination);
-        oscillator.start(now + offset);
-        oscillator.stop(now + offset + 0.2);
-        ringerOscillators.push(oscillator);
-      });
-      setTimeout(scheduleBurst, 1800);
-    };
-    scheduleBurst();
-  } catch {
-    incomingBanner.textContent = "Свайпните чтобы ответить.";
-  }
-}
-
-function stopRingtone() {
-  ringerOscillators.forEach((oscillator) => oscillator.stop?.());
-  ringerOscillators = [];
-  ringerAudioContext?.close?.().catch(() => {});
-  ringerAudioContext = null;
 }

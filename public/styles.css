@@ -29,6 +29,8 @@ button, input { font: inherit; }
 button { border: 0; cursor: pointer; }
 .hidden { display: none !important; }
 
+/* ===== CLIENT SIDE ===== */
+
 .page {
   min-height: 100vh;
   display: grid;
@@ -97,8 +99,7 @@ button { border: 0; cursor: pointer; }
   position: relative;
 }
 
-.screen-label,
-.incoming-topline {
+.screen-label {
   color: var(--muted);
   font-size: 13px;
   letter-spacing: 0.16em;
@@ -178,21 +179,18 @@ button { border: 0; cursor: pointer; }
 .footer-meta,
 .settings-note,
 .talk-substatus,
-.receiver-banner,
-.incoming-copy {
+.receiver-banner {
   color: var(--muted);
   line-height: 1.45;
 }
 
 .talk-screen,
-.settings-screen,
-.receiver-screen {
+.settings-screen {
   align-content: space-between;
   gap: 22px;
 }
 
-.talk-core,
-.receiver-talk-core {
+.talk-core {
   display: grid;
   gap: 18px;
   align-content: center;
@@ -200,24 +198,7 @@ button { border: 0; cursor: pointer; }
   text-align: center;
 }
 
-.call-avatar-wrap {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  padding: 8px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03));
-}
-
-.call-avatar,
-.avatar {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.talk-status,
-.incoming-name {
+.talk-status {
   font-size: clamp(28px, 7vw, 42px);
   font-weight: 700;
   letter-spacing: -0.04em;
@@ -231,8 +212,7 @@ button { border: 0; cursor: pointer; }
   letter-spacing: -0.06em;
 }
 
-.talk-actions,
-.receiver-end-zone {
+.talk-actions {
   display: grid;
   align-items: end;
 }
@@ -337,57 +317,7 @@ button { border: 0; cursor: pointer; }
   padding: 0 16px;
 }
 
-.receiver-screen {
-  min-height: min(94vh, 920px);
-  padding: 52px 24px 28px;
-  display: grid;
-}
-
-.incoming-identity {
-  display: grid;
-  gap: 18px;
-  justify-items: center;
-  text-align: center;
-}
-
-.avatar {
-  width: 132px;
-  height: 132px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.08);
-}
-
-.avatar-initial {
-  display: grid;
-  place-items: center;
-  font-size: 42px;
-  font-weight: 700;
-}
-
-.ringer-zone {
-  position: relative;
-  min-height: 320px;
-  display: grid;
-  place-items: center;
-}
-
-.ringer-wave {
-  position: absolute;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  border: 1px solid rgba(50, 212, 111, 0.28);
-  animation: ring-pulse 2.4s infinite;
-}
-
-.wave-2 { animation-delay: 0.8s; }
-.wave-3 { animation-delay: 1.6s; }
-
-@keyframes ring-pulse {
-  0% { transform: scale(0.8); opacity: 0; }
-  18% { opacity: 0.55; }
-  100% { transform: scale(1.8); opacity: 0; }
-}
+/* ===== SWIPE CONTROLS (shared) ===== */
 
 .swipe-control {
   position: relative;
@@ -440,14 +370,164 @@ button { border: 0; cursor: pointer; }
   font-size: 28px;
   touch-action: none;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .answer-thumb { background: var(--green); }
 .end-thumb { background: var(--red); }
 
+/* ===== RECEIVER (собеседник) FULL-SCREEN ===== */
+
+.receiver-body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+.receiver-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.receiver-bg-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.receiver-bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0,0,0,0.15) 0%,
+    rgba(0,0,0,0.05) 30%,
+    rgba(0,0,0,0.45) 70%,
+    rgba(0,0,0,0.85) 100%
+  );
+}
+
+.receiver-fullscreen {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.receiver-incoming {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  height: 100%;
+  padding: 0 24px env(safe-area-inset-bottom, 24px);
+}
+
+.receiver-incoming.active {
+  display: grid;
+}
+
+.incoming-spacer {
+  min-height: 40px;
+}
+
+.incoming-info {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+  padding-bottom: 32px;
+}
+
+.incoming-name {
+  font-size: clamp(36px, 10vw, 56px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  margin: 0;
+  text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+}
+
+.incoming-copy {
+  color: rgba(255,255,255,0.75);
+  font-size: 18px;
+  line-height: 1.4;
+  text-shadow: 0 1px 8px rgba(0,0,0,0.4);
+  margin: 0;
+}
+
+.incoming-bottom {
+  display: grid;
+  gap: 16px;
+  padding-bottom: 32px;
+}
+
+.receiver-banner {
+  text-align: center;
+  color: rgba(255,255,255,0.55);
+  font-size: 14px;
+}
+
+/* Receiver call view */
+.receiver-call {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  height: 100%;
+  padding: 0 24px env(safe-area-inset-bottom, 24px);
+}
+
+.call-spacer { min-height: 40px; }
+
+.call-center {
+  display: grid;
+  gap: 18px;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.call-center .talk-status {
+  text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+}
+
+.call-center .talk-timer {
+  text-shadow: 0 4px 30px rgba(0,0,0,0.4);
+}
+
+.call-center .talk-substatus {
+  color: rgba(255,255,255,0.6);
+  text-shadow: 0 1px 8px rgba(0,0,0,0.4);
+}
+
+.call-bottom {
+  display: grid;
+  gap: 16px;
+  padding-bottom: 32px;
+}
+
+/* ===== SHAKE ANIMATION ===== */
+
+@keyframes shake-pulse {
+  0%   { transform: translateX(0); }
+  8%   { transform: translateX(-6px); }
+  16%  { transform: translateX(5px); }
+  24%  { transform: translateX(-4px); }
+  32%  { transform: translateX(3px); }
+  40%  { transform: translateX(-2px); }
+  48%  { transform: translateX(1px); }
+  55%  { transform: translateX(0); }
+  100% { transform: translateX(0); }
+}
+
+.incoming-info.shaking {
+  animation: shake-pulse 1.8s ease-in-out infinite;
+}
+
+/* ===== RESPONSIVE ===== */
+
 @media (max-width: 480px) {
   .phone-shell { width: 100%; min-height: 100vh; border-radius: 0; }
-  .panel-screen, .receiver-screen { min-height: 100vh; }
+  .panel-screen { min-height: 100vh; }
   .qr-stage-inner { min-height: 48vh; height: 58vh; }
   .talk-timer { font-size: 76px; }
 }

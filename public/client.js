@@ -25,7 +25,7 @@ const regenQrSettingsBtn = document.getElementById("regenQrSettingsBtn");
 const callStatus = document.getElementById("callStatus");
 const callSubstatus = document.getElementById("callSubstatus");
 const callTimer = document.getElementById("callTimer");
-const endCallBtn = document.getElementById("endCallBtn");
+const clientEndSwipe = document.getElementById("clientEndSwipe");
 
 let selectedModel = "mini";
 let currentSession = null;
@@ -97,7 +97,63 @@ function bindEvents() {
 
   regenQrBtn.addEventListener("click", createSession);
   regenQrSettingsBtn.addEventListener("click", createSession);
-  endCallBtn.addEventListener("click", () => endConversation("ended_by_client"));
+
+  // Swipe to end call (client side)
+  setupSwipeControl(clientEndSwipe, () => endConversation("ended_by_client"));
+}
+
+function setupSwipeControl(root, onComplete) {
+  const thumb = root.querySelector(".swipe-thumb");
+  const fill = root.querySelector(".swipe-track-fill");
+  let dragging = false;
+  let startX = 0;
+  let current = 0;
+
+  const maxShift = () => root.clientWidth - thumb.clientWidth - 12;
+
+  const paint = (value) => {
+    current = Math.max(0, Math.min(maxShift(), value));
+    thumb.style.transform = `translateX(${current}px)`;
+    fill.style.width = `${current + thumb.clientWidth}px`;
+  };
+
+  const finish = async () => {
+    if (current >= maxShift() * 0.82) {
+      paint(maxShift());
+      root.classList.add("completed");
+      await onComplete();
+      return;
+    }
+    root.classList.remove("completed");
+    paint(0);
+  };
+
+  const start = (clientX) => {
+    dragging = true;
+    startX = clientX - current;
+  };
+
+  const move = (clientX) => {
+    if (!dragging) return;
+    paint(clientX - startX);
+  };
+
+  const end = async () => {
+    if (!dragging) return;
+    dragging = false;
+    await finish();
+  };
+
+  thumb.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    start(event.clientX);
+    thumb.setPointerCapture(event.pointerId);
+  });
+  thumb.addEventListener("pointermove", (event) => move(event.clientX));
+  thumb.addEventListener("pointerup", end);
+  thumb.addEventListener("pointercancel", end);
+
+  paint(0);
 }
 
 function setScreen(index) {
@@ -140,7 +196,14 @@ async function createSession() {
     qrImage.classList.remove("hidden");
     qrPlaceholder.classList.add("hidden");
     inviteUrlInput.value = payload.inviteUrl;
-    contactHint.textContent = "Отсканируйте чтобы поговорить";
+    contactHint.textContent = "Отсканируйте QR-код для разговора";
+
+    // Reset call screen to idle state
+    callStatus.textContent = "У вас пока нет текущей сессии";
+    callTimer.classList.add("hidden");
+    callSubstatus.textContent = "Создайте QR-код и дождитесь ответа собеседника.";
+    clientEndSwipe.classList.add("hidden");
+
     connectSocket();
     renderSessionState();
     setScreen(0);
@@ -181,6 +244,8 @@ function connectSocket() {
         await teardownMedia();
         callStatus.textContent = "Разговор завершён";
         callSubstatus.textContent = "Сгенерируйте новый QR-код для следующего разговора.";
+        callTimer.classList.add("hidden");
+        clientEndSwipe.classList.add("hidden");
         markQrExpired();
       }
 
@@ -222,11 +287,13 @@ function renderSessionState() {
   const expiresAt = new Date(currentSession.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   contactHint.textContent = currentSession.status === "active"
     ? "Разговор идёт"
-    : `Отсканируйте чтобы поговорить · до ${expiresAt}`;
+    : `Отсканируйте QR-код для разговора · до ${expiresAt}`;
 
   if (currentSession.status === "ringing") {
     callStatus.textContent = "Идёт вызов";
     callSubstatus.textContent = "Ждём свайп-ответ от собеседника.";
+    callTimer.classList.add("hidden");
+    clientEndSwipe.classList.add("hidden");
   }
   if (currentSession.status === "accepted") {
     callStatus.textContent = "Ответ получен";
@@ -239,6 +306,8 @@ function renderSessionState() {
   if (currentSession.status === "active") {
     callStatus.textContent = "Разговор";
     callSubstatus.textContent = "Перевод идёт автоматически.";
+    callTimer.classList.remove("hidden");
+    clientEndSwipe.classList.remove("hidden");
   }
 }
 
@@ -368,6 +437,8 @@ function sendPeerSignal(payload) {
 
 function startTimer() {
   stopTimer();
+  callTimer.classList.remove("hidden");
+  clientEndSwipe.classList.remove("hidden");
   timerId = setInterval(() => {
     callTimer.textContent = formatDuration(currentSession?.startedAt || new Date().toISOString());
   }, 250);
@@ -390,6 +461,8 @@ async function endConversation(reason, options = {}) {
   if (!options.silent) {
     callStatus.textContent = "Разговор завершён";
     callSubstatus.textContent = "Для нового разговора обновите QR-код.";
+    callTimer.classList.add("hidden");
+    clientEndSwipe.classList.add("hidden");
     markQrExpired();
   }
 }

@@ -6,51 +6,44 @@
     <title>Входящий разговор</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <main class="page app-shell">
-      <section class="phone-shell receiver-shell">
-        <div id="incomingView" class="receiver-screen active">
-          <div class="incoming-topline">Входящий разговор</div>
-          <div class="incoming-identity">
-            <img id="clientPhoto" class="avatar hidden" alt="Client photo" />
-            <div id="clientInitial" class="avatar avatar-initial"></div>
-            <div>
-              <h1 id="clientName" class="incoming-name">...</h1>
-              <p class="incoming-copy">Хочет поговорить с вами на вашем языке</p>
-            </div>
-          </div>
+  <body class="receiver-body">
+    <div id="receiverBg" class="receiver-bg">
+      <img id="clientPhotoBg" class="receiver-bg-photo" alt="" />
+      <div class="receiver-bg-overlay"></div>
+    </div>
 
-          <div class="ringer-zone">
-            <div class="ringer-wave wave-1"></div>
-            <div class="ringer-wave wave-2"></div>
-            <div class="ringer-wave wave-3"></div>
-            <div class="swipe-control answer-control" id="acceptSwipe">
-              <div class="swipe-track-fill"></div>
-              <div class="swipe-label">Свайп чтобы ответить</div>
-              <div class="swipe-thumb answer-thumb">📞</div>
-            </div>
+    <main class="receiver-fullscreen">
+      <div id="incomingView" class="receiver-incoming active">
+        <div class="incoming-spacer"></div>
+        <div class="incoming-info" id="incomingInfo">
+          <h1 id="clientName" class="incoming-name">...</h1>
+          <p class="incoming-copy">Ответьте на звонок, чтобы поговорить</p>
+        </div>
+        <div class="incoming-bottom">
+          <div class="swipe-control answer-control" id="acceptSwipe">
+            <div class="swipe-track-fill"></div>
+            <div class="swipe-label">Свайп чтобы ответить</div>
+            <div class="swipe-thumb answer-thumb">📞</div>
           </div>
-
-          <button id="declineBtn" class="ghost-danger" type="button">Отклонить</button>
           <div id="incomingBanner" class="receiver-banner">После ответа браузер запросит доступ к микрофону.</div>
         </div>
+      </div>
 
-        <div id="receiverCallView" class="receiver-screen hidden">
-          <div class="incoming-topline">Разговор активен</div>
-          <div class="talk-core receiver-talk-core">
-            <div id="receiverCallStatus" class="talk-status">Подключение</div>
-            <div id="receiverCallTimer" class="talk-timer">00:00</div>
-            <div id="receiverBanner" class="talk-substatus">Идёт соединение.</div>
-          </div>
-          <div class="receiver-end-zone">
-            <div class="swipe-control end-control" id="endSwipe">
-              <div class="swipe-track-fill"></div>
-              <div class="swipe-label">Свайп чтобы сбросить</div>
-              <div class="swipe-thumb end-thumb">✕</div>
-            </div>
+      <div id="receiverCallView" class="receiver-call hidden">
+        <div class="call-spacer"></div>
+        <div class="call-center">
+          <div id="receiverCallStatus" class="talk-status">Подключение</div>
+          <div id="receiverCallTimer" class="talk-timer">00:00</div>
+          <div id="receiverBanner2" class="talk-substatus">Идёт соединение.</div>
+        </div>
+        <div class="call-bottom">
+          <div class="swipe-control end-control" id="endSwipe">
+            <div class="swipe-track-fill"></div>
+            <div class="swipe-label">Свайп чтобы сбросить</div>
+            <div class="swipe-thumb end-thumb">✕</div>
           </div>
         </div>
-      </section>
+      </div>
     </main>
 
     <script type="module" src="/join.js"></script>

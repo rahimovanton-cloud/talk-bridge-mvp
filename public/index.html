@@ -10,14 +10,15 @@
     <main class="page app-shell">
       <section class="phone-shell client-shell">
         <div class="screen-dots">
-          <button type="button" class="screen-dot active" data-screen-jump="0" aria-label="Экран контакта"></button>
-          <button type="button" class="screen-dot" data-screen-jump="1" aria-label="Экран разговора"></button>
-          <button type="button" class="screen-dot" data-screen-jump="2" aria-label="Экран настроек"></button>
+          <button type="button" class="screen-dot active" data-screen-jump="0" aria-label="QR-код"></button>
+          <button type="button" class="screen-dot" data-screen-jump="1" aria-label="Разговор"></button>
+          <button type="button" class="screen-dot" data-screen-jump="2" aria-label="Настройки"></button>
         </div>
 
         <div id="clientSwipeTrack" class="swipe-track">
+          <!-- Screen 1: QR -->
           <section class="panel-screen contact-screen">
-            <div class="screen-label">Экран контакта</div>
+            <div class="screen-label">QR-код</div>
             <div class="contact-copy">
               <h1 class="hero-title">Позвольте поговорить с вами на вашем языке</h1>
             </div>
@@ -27,31 +28,34 @@
                 <img id="qrImage" class="qr-image hidden" alt="QR invite" />
                 <div id="qrOverlay" class="qr-overlay hidden">
                   <div class="qr-overlay-text">QR-код устарел</div>
-                  <button id="regenQrBtn" class="secondary-button" type="button">Сгенерировать новый QR</button>
+                  <button id="regenQrBtn" class="secondary-button" type="button">Обновите QR-код</button>
                 </div>
               </div>
             </div>
             <div class="contact-footer">
-              <div class="footer-note">Отсканируйте чтобы поговорить</div>
+              <div class="footer-note">Отсканируйте QR-код для разговора</div>
               <div id="contactHint" class="footer-meta">Сессия ещё не создана</div>
             </div>
           </section>
 
+          <!-- Screen 2: Call -->
           <section class="panel-screen talk-screen">
             <div class="screen-label">Разговор</div>
             <div class="talk-core">
-              <div class="call-avatar-wrap">
-                <img src="/assets/client-photo.jpg" alt="Client" class="call-avatar" />
-              </div>
-              <div id="callStatus" class="talk-status">Ожидание ответа</div>
-              <div id="callTimer" class="talk-timer">00:00</div>
-              <div id="callSubstatus" class="talk-substatus">Экран переключится автоматически, когда собеседник ответит.</div>
+              <div id="callStatus" class="talk-status">У вас пока нет текущей сессии</div>
+              <div id="callTimer" class="talk-timer hidden">00:00</div>
+              <div id="callSubstatus" class="talk-substatus">Создайте QR-код и дождитесь ответа собеседника.</div>
             </div>
             <div class="talk-actions">
-              <button id="endCallBtn" class="danger-button" type="button">Сбросить</button>
+              <div class="swipe-control end-control hidden" id="clientEndSwipe">
+                <div class="swipe-track-fill"></div>
+                <div class="swipe-label">Свайп чтобы сбросить</div>
+                <div class="swipe-thumb end-thumb">✕</div>
+              </div>
             </div>
           </section>
 
+          <!-- Screen 3: Settings / Technical -->
           <section class="panel-screen settings-screen">
             <div class="screen-label">Настройки</div>
             <div class="settings-block">
