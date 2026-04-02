@@ -28,6 +28,7 @@ let micStream = null;
 let remoteAudio = null;
 let timerId = null;
 let makingOffer = false;
+let ignoreOffer = false;
 let ringerCtx = null;
 let ringerTimer = null;
 let answered = false;
@@ -260,9 +261,6 @@ async function ensurePeerConnection() {
   if (peerPc) return;
   peerPc = new RTCPeerConnection(PEER_ICE_CONFIG);
 
-  // Pre-create audio transceiver so SDP always has audio media section
-  peerPc.addTransceiver("audio", { direction: "sendrecv" });
-
   peerPc.addEventListener("icecandidate", ({ candidate }) => {
     if (candidate) sendPeerSignal({ type: "ice", candidate });
   });
@@ -275,13 +273,12 @@ async function ensurePeerConnection() {
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
 
-  // Perfect Negotiation: RECEIVER is the POLITE side
+  // Perfect Negotiation (MDN spec): RECEIVER is the POLITE side
   peerPc.addEventListener("negotiationneeded", async () => {
     try {
       makingOffer = true;
-      const offer = await peerPc.createOffer();
-      if (peerPc.signalingState !== "stable") return;
-      await peerPc.setLocalDescription(offer);
+      await peerPc.setLocalDescription();
+      console.log("RECEIVER: sending offer (negotiationneeded)");
       sendPeerSignal({ type: "offer", sdp: peerPc.localDescription.sdp });
     } catch (e) {
       console.error("RECEIVER: negotiationneeded error:", e);
@@ -305,7 +302,7 @@ async function attachTranslatedTrack(stream, track) {
     if (existing) return;
     console.log("RECEIVER: adding translated track to peer connection", track.kind, track.id);
     peerPc.addTrack(track, stream);
-    // negotiationneeded event will fire automatically and handle the offer
+    // negotiationneeded event fires automatically → sends offer
   } catch (e) {
     console.error("RECEIVER: attachTranslatedTrack error:", e);
   }
@@ -314,27 +311,30 @@ async function attachTranslatedTrack(stream, track) {
 async function handlePeerSignal(p) {
   await ensurePeerConnection();
 
-  if (p.type === "offer") {
-    // POLITE side: if we're making an offer, rollback ours and accept theirs
-    if (makingOffer || peerPc.signalingState !== "stable") {
-      console.log("RECEIVER (polite): rolling back our offer to accept remote offer");
-      await peerPc.setLocalDescription({ type: "rollback" });
+  try {
+    if (p.type === "offer") {
+      const offerCollision = makingOffer || peerPc.signalingState !== "stable";
+      // POLITE side: accept the incoming offer on collision (they win)
+      ignoreOffer = false;
+      if (offerCollision) {
+        console.log("RECEIVER (polite): accepting colliding offer, rolling back ours");
+      }
+      // setRemoteDescription implicitly rolls back if we're in have-local-offer
+      await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
+      await peerPc.setLocalDescription();
+      sendPeerSignal({ type: "answer", sdp: peerPc.localDescription.sdp });
+      return;
     }
-    await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
-    const answer = await peerPc.createAnswer();
-    await peerPc.setLocalDescription(answer);
-    sendPeerSignal({ type: "answer", sdp: answer.sdp });
-    return;
-  }
-  if (p.type === "answer") {
-    if (peerPc.signalingState === "have-local-offer") {
+    if (p.type === "answer") {
       await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp });
+      return;
     }
-    return;
-  }
-  if (p.type === "ice" && p.candidate) {
-    try { await peerPc.addIceCandidate(p.candidate); } catch (e) {
-      console.warn("RECEIVER: addIceCandidate error (non-fatal):", e);
+    if (p.type === "ice" && p.candidate) {
+      await peerPc.addIceCandidate(p.candidate);
+    }
+  } catch (e) {
+    if (!ignoreOffer) {
+      console.error("RECEIVER: handlePeerSignal error:", e);
     }
   }
 }

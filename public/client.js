@@ -52,6 +52,7 @@ let micStream = null;
 let timerId = null;
 let remoteAudio = null;
 let makingOffer = false;
+let ignoreOffer = false;
 let autoStartedSessionId = null;
 
 init();
@@ -416,9 +417,6 @@ async function ensurePeerConnection() {
   if (peerPc) return;
   peerPc = new RTCPeerConnection(PEER_ICE_CONFIG);
 
-  // Pre-create audio transceiver so SDP always has audio media section
-  peerPc.addTransceiver("audio", { direction: "sendrecv" });
-
   peerPc.addEventListener("icecandidate", ({ candidate }) => {
     if (candidate) sendPeerSignal({ type: "ice", candidate });
   });
@@ -431,13 +429,12 @@ async function ensurePeerConnection() {
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
 
-  // Perfect Negotiation: CLIENT is the IMPOLITE side
+  // Perfect Negotiation (MDN spec): CLIENT is the IMPOLITE side
   peerPc.addEventListener("negotiationneeded", async () => {
     try {
       makingOffer = true;
-      const offer = await peerPc.createOffer();
-      if (peerPc.signalingState !== "stable") return;
-      await peerPc.setLocalDescription(offer);
+      await peerPc.setLocalDescription();
+      console.log("CLIENT: sending offer (negotiationneeded)");
       sendPeerSignal({ type: "offer", sdp: peerPc.localDescription.sdp });
     } catch (e) {
       console.error("CLIENT: negotiationneeded error:", e);
@@ -465,7 +462,7 @@ async function attachTranslatedTrack(stream, track) {
     if (existing) return;
     console.log("CLIENT: adding translated track to peer connection", track.kind, track.id);
     peerPc.addTrack(track, stream);
-    // negotiationneeded event will fire automatically and handle the offer
+    // negotiationneeded event fires automatically → sends offer
   } catch (e) {
     console.error("CLIENT: attachTranslatedTrack error:", e);
   }
@@ -475,27 +472,30 @@ async function handlePeerSignal(p) {
   if (!currentSession) return;
   await ensurePeerConnection();
 
-  if (p.type === "offer") {
-    // IMPOLITE side: if we're making an offer, ignore the incoming one (we win)
-    if (makingOffer || peerPc.signalingState !== "stable") {
-      console.log("CLIENT (impolite): ignoring offer, we have priority");
+  try {
+    if (p.type === "offer") {
+      const offerCollision = makingOffer || peerPc.signalingState !== "stable";
+      // IMPOLITE side: ignore the incoming offer on collision (we win)
+      ignoreOffer = offerCollision;
+      if (ignoreOffer) {
+        console.log("CLIENT (impolite): ignoring colliding offer");
+        return;
+      }
+      await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
+      await peerPc.setLocalDescription();
+      sendPeerSignal({ type: "answer", sdp: peerPc.localDescription.sdp });
       return;
     }
-    await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
-    const answer = await peerPc.createAnswer();
-    await peerPc.setLocalDescription(answer);
-    sendPeerSignal({ type: "answer", sdp: answer.sdp });
-    return;
-  }
-  if (p.type === "answer") {
-    if (peerPc.signalingState === "have-local-offer") {
+    if (p.type === "answer") {
       await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp });
+      return;
     }
-    return;
-  }
-  if (p.type === "ice" && p.candidate) {
-    try { await peerPc.addIceCandidate(p.candidate); } catch (e) {
-      console.warn("CLIENT: addIceCandidate error (non-fatal):", e);
+    if (p.type === "ice" && p.candidate) {
+      await peerPc.addIceCandidate(p.candidate);
+    }
+  } catch (e) {
+    if (!ignoreOffer) {
+      console.error("CLIENT: handlePeerSignal error:", e);
     }
   }
 }
