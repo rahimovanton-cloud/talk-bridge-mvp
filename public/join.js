@@ -213,14 +213,15 @@ async function acceptCall() {
     receiverBanner.textContent = "Запускаем перевод.";
 
     await ensurePeerConnection(false);
-    const token = await bootstrapRealtime({
+    const bootstrap = await bootstrapRealtime({
       sessionId: currentSession.id,
       role: "receiver",
       speakerLanguageHint: languageHint(),
     });
 
     const realtime = await connectOpenAiRealtime({
-      token,
+      token: bootstrap.token,
+      model: bootstrap.model,
       micStream,
       onTrack: async (track, stream) => {
         await attachTranslatedTrack(stream, track);

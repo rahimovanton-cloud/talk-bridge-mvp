@@ -44,10 +44,11 @@ export async function bootstrapRealtime({ sessionId, role, speakerLanguageHint }
     method: "POST",
     body: JSON.stringify({ sessionId, role, speakerLanguageHint }),
   });
-  return payload.clientSecret;
+  console.log("bootstrap response:", JSON.stringify(payload).slice(0, 300));
+  return { token: payload.clientSecret, model: payload.session?.modelId || "gpt-4o-mini-realtime-preview" };
 }
 
-export async function connectOpenAiRealtime({ token, micStream, onTrack, onEvent, onState }) {
+export async function connectOpenAiRealtime({ token, model, micStream, onTrack, onEvent, onState }) {
   const pc = new RTCPeerConnection();
   const audioTrack = micStream.getAudioTracks()[0];
   if (audioTrack) {
@@ -76,8 +77,9 @@ export async function connectOpenAiRealtime({ token, micStream, onTrack, onEvent
   await pc.setLocalDescription(offer);
 
   // OpenAI Realtime WebRTC endpoint
-  const model = "gpt-4o-realtime-preview";
-  const response = await fetch(`https://api.openai.com/v1/realtime?model=${model}`, {
+  const rtModel = model || "gpt-4o-mini-realtime-preview";
+  console.log("Connecting OpenAI WebRTC, model:", rtModel, "token:", token?.slice(0, 10) + "...");
+  const response = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(rtModel)}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

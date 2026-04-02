@@ -294,7 +294,7 @@ async function startConversation() {
     await ensurePeerConnection(true);
     callSubstatus.textContent = "Получаем ключ OpenAI.";
 
-    const token = await bootstrapRealtime({
+    const bootstrap = await bootstrapRealtime({
       sessionId: currentSession.id,
       role: "client",
       speakerLanguageHint: languageHint(),
@@ -303,7 +303,8 @@ async function startConversation() {
     callSubstatus.textContent = "Подключаем OpenAI Realtime.";
 
     const realtime = await connectOpenAiRealtime({
-      token,
+      token: bootstrap.token,
+      model: bootstrap.model,
       micStream,
       onTrack: async (track, stream) => { await attachTranslatedTrack(stream, track); },
       onState: (state) => {
