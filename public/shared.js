@@ -83,10 +83,18 @@ export async function connectOpenAiRealtime({ token, model, micStream, onTrack, 
     onState?.(pc.connectionState);
   });
   pc.addEventListener("track", (event) => {
-    console.log("OpenAI track received:", event.track.kind);
-    // Do NOT attach to any audio element or AudioContext — that would
-    // either auto-play locally or consume the track. Just pass it
-    // straight to the peer connection for the other party to hear.
+    console.log("OpenAI track received:", event.track.kind, event.track.id);
+    // Attach to a hidden MUTED audio element to keep the track alive.
+    // Without this, browsers may pause/kill the track since nobody consumes it,
+    // and it arrives dead at the peer connection on the other side.
+    const keepAlive = document.createElement("audio");
+    keepAlive.srcObject = event.streams[0];
+    keepAlive.muted = true;
+    keepAlive.playsInline = true;
+    keepAlive.style.display = "none";
+    document.body.appendChild(keepAlive);
+    keepAlive.play().catch(() => {});
+    // Now forward the live track to the peer connection for the other party
     onTrack(event.track, event.streams[0]);
   });
 
