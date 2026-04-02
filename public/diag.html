@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Диагностика Talk Bridge</title>
+  <style>
+    body { background:#111; color:#eee; font-family:system-ui; padding:20px; font-size:15px; }
+    #log { white-space:pre-wrap; background:#000; padding:12px; border-radius:8px; max-height:70vh; overflow-y:auto; font-size:13px; line-height:1.6; }
+    button { padding:14px 28px; font-size:16px; border:none; border-radius:8px; background:#32d46f; color:#000; font-weight:700; margin:12px 4px; }
+    .ok { color:#32d46f; }
+    .err { color:#ff453a; }
+    .warn { color:#f0b24c; }
+  </style>
+</head>
+<body>
+  <h2>Диагностика аудио</h2>
+  <p>Нажми кнопку — тест проверит каждый шаг и покажет где обрыв.</p>
+  <button onclick="runDiag()">Запустить тест</button>
+  <button onclick="stopTest()">Стоп</button>
+  <div id="log"></div>
+
+  <script>
+    const el = document.getElementById("log");
+    let pc, micStream;
+
+    function log(msg, cls) {
+      const line = document.createElement("div");
+      line.className = cls || "";
+      line.textContent = msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function stopTest() {
+      pc?.close();
+      micStream?.getTracks().forEach(t => t.stop());
+      log("--- Тест остановлен ---", "warn");
+    }
+
+    async function runDiag() {
+      el.innerHTML = "";
+      log("=== Начинаем диагностику ===");
+
+      // Step 1: Backend health
+      log("\n[1] Проверяем backend...");
+      try {
+        const h = await fetch("/health").then(r => r.json());
+        log("✓ Backend OK: " + h.service, "ok");
+      } catch(e) {
+        log("✗ Backend недоступен: " + e.message, "err");
+        return;
+      }
+
+      // Step 2: Create session
+      log("\n[2] Создаём сессию...");
+      let session;
+      try {
+        const resp = await fetch("/api/session/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "mini", clientName: "DiagTest", clientLanguageHint: "ru" })
+        }).then(r => r.json());
+        session = resp.session;
+        log("✓ Сессия: " + session.id.slice(0,8) + "... модель: " + session.modelId, "ok");
+      } catch(e) {
+        log("✗ Ошибка создания сессии: " + e.message, "err");
+        return;
+      }
+
+      // Step 3: Microphone
+      log("\n[3] Запрашиваем микрофон...");
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const track = micStream.getAudioTracks()[0];
+        log("✓ Микрофон: " + track.label + " (" + track.readyState + ")", "ok");
+      } catch(e) {
+        log("✗ Микрофон отклонён: " + e.message, "err");
+        return;
+      }
+
+      // Step 4: Bootstrap (get ephemeral key)
+      log("\n[4] Получаем ephemeral key от OpenAI...");
+      let token, modelId;
+      try {
+        const resp = await fetch("/api/realtime/bootstrap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: session.id, role: "client", speakerLanguageHint: "ru" })
+        }).then(r => r.json());
+        token = resp.clientSecret;
+        modelId = resp.session?.modelId || "gpt-4o-mini-realtime-preview";
+        if (!token) {
+          log("✗ Нет clientSecret в ответе: " + JSON.stringify(resp).slice(0, 300), "err");
+          return;
+        }
+        log("✓ Token: " + token.slice(0, 15) + "...", "ok");
+        log("  Model: " + modelId, "ok");
+      } catch(e) {
+        log("✗ Bootstrap ошибка: " + e.message, "err");
+        return;
+      }
+
+      // Step 5: WebRTC to OpenAI
+      log("\n[5] Подключаем WebRTC к OpenAI Realtime...");
+      try {
+        pc = new RTCPeerConnection();
+        const audioTrack = micStream.getAudioTracks()[0];
+        pc.addTrack(audioTrack, micStream);
+
+        const dc = pc.createDataChannel("oai-events");
+        dc.addEventListener("open", () => log("  DataChannel открыт", "ok"));
+        dc.addEventListener("message", (e) => {
+          try {
+            const ev = JSON.parse(e.data);
+            log("  DC event: " + ev.type, "warn");
+          } catch {
+            log("  DC raw: " + e.data.slice(0, 100));
+          }
+        });
+
+        pc.addEventListener("connectionstatechange", () => {
+          const s = pc.connectionState;
+          if (s === "connected") log("✓ WebRTC CONNECTED — OpenAI на связи!", "ok");
+          else if (s === "failed") log("✗ WebRTC FAILED", "err");
+          else log("  WebRTC state: " + s, "warn");
+        });
+
+        pc.addEventListener("track", (e) => {
+          log("✓ Получен аудио-трек от OpenAI! kind=" + e.track.kind, "ok");
+          // Play it
+          const audio = document.createElement("audio");
+          audio.autoplay = true;
+          audio.playsInline = true;
+          audio.srcObject = new MediaStream([e.track]);
+          document.body.appendChild(audio);
+          audio.play().then(() => log("✓ Audio play() OK — ты должен слышать перевод!", "ok"))
+                      .catch(err => log("✗ Audio play() blocked: " + err.message, "err"));
+        });
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        log("  SDP offer создан (" + offer.sdp.length + " bytes)");
+        log("  SDP содержит audio: " + offer.sdp.includes("m=audio"), offer.sdp.includes("m=audio") ? "ok" : "err");
+
+        const url = "https://api.openai.com/v1/realtime?model=" + encodeURIComponent(modelId);
+        log("  Отправляем SDP на: " + url);
+
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/sdp",
+          },
+          body: offer.sdp,
+        });
+
+        log("  Ответ HTTP: " + resp.status);
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          log("✗ OpenAI отклонил: " + errText.slice(0, 500), "err");
+          return;
+        }
+
+        const answerSdp = await resp.text();
+        log("  SDP answer получен (" + answerSdp.length + " bytes)", "ok");
+        await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+        log("✓ Remote description установлен", "ok");
+
+        log("\n[6] Ожидаем соединение... Говори в микрофон!");
+        log("  Если через 5-10 сек увидишь 'CONNECTED' и 'аудио-трек' — всё работает.");
+        log("  Если нет — проблема в WebRTC/сети.");
+
+      } catch(e) {
+        log("✗ WebRTC ошибка: " + e.message + "\n" + e.stack, "err");
+      }
+    }
+  </script>
+</body>
+</html>
