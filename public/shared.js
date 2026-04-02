@@ -29,8 +29,11 @@ export function formatDuration(startedAt) {
 export function connectSignalSocket({ sessionId, role, onMessage }) {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${protocol}://${location.host}/api/session/signal?sessionId=${encodeURIComponent(sessionId)}&role=${role}`);
+  // Queue messages so async handlers finish before next message is processed.
+  // Prevents race: ICE candidates arriving before offer is fully handled.
+  let queue = Promise.resolve();
   ws.addEventListener("message", (event) => {
-    onMessage(JSON.parse(event.data));
+    queue = queue.then(() => onMessage(JSON.parse(event.data))).catch((err) => console.error("ws handler error:", err));
   });
   return ws;
 }
@@ -66,6 +69,13 @@ export async function connectOpenAiRealtime({ token, model, micStream, onTrack, 
     pc.addTrack(audioTrack, micStream);
   }
 
+  // Mute sink — prevents iOS Safari from auto-playing OpenAI audio locally.
+  // The translated track must go ONLY to the other party via peer connection.
+  const muteSink = document.createElement("audio");
+  muteSink.muted = true;
+  muteSink.style.display = "none";
+  document.body.appendChild(muteSink);
+
   const dc = pc.createDataChannel("oai-events");
   dc.addEventListener("message", (event) => {
     try {
@@ -81,6 +91,9 @@ export async function connectOpenAiRealtime({ token, model, micStream, onTrack, 
   });
   pc.addEventListener("track", (event) => {
     console.log("OpenAI track received:", event.track.kind);
+    // Attach to muted element to claim the track (prevents auto-play on iOS)
+    muteSink.srcObject = new MediaStream([event.track]);
+    // Pass track to caller — it will be routed to peer connection, NOT played locally
     onTrack(event.track, event.streams[0]);
   });
 

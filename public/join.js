@@ -282,12 +282,14 @@ async function attachTranslatedTrack(stream, track) {
   if (!peerPc) await ensurePeerConnection(false);
   const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
   if (existing) return;
+  console.log("RECEIVER: adding translated track to peer connection", track.kind, track.id);
   peerPc.addTrack(track, stream);
-  if (peerPc.signalingState === "stable" && !makingOffer) {
+  if (!makingOffer) {
     makingOffer = true;
     const offer = await peerPc.createOffer();
     await peerPc.setLocalDescription(offer);
     sendPeerSignal({ type: "offer", sdp: offer.sdp });
+    console.log("RECEIVER: sent offer with translated track");
     makingOffer = false;
   }
 }

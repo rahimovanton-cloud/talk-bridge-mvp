@@ -292,7 +292,7 @@ async function startConversation() {
     await ensureMic();
     callSubstatus.textContent = "Микрофон получен. Подключаем перевод.";
 
-    await ensurePeerConnection(true);
+    await ensurePeerConnection(false);
     callSubstatus.textContent = "Получаем ключ OpenAI.";
 
     const bootstrap = await bootstrapRealtime({
@@ -374,15 +374,18 @@ async function ensurePeerConnection(isInitiator) {
 }
 
 async function attachTranslatedTrack(stream, track) {
-  if (!peerPc) await ensurePeerConnection(true);
+  if (!peerPc) await ensurePeerConnection(false);
   const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
   if (existing) return;
+  console.log("CLIENT: adding translated track to peer connection", track.kind, track.id);
   peerPc.addTrack(track, stream);
-  if (peerPc.signalingState === "stable" && !makingOffer) {
+  // Always create offer when adding a track — we need to send it to the other side
+  if (!makingOffer) {
     makingOffer = true;
     const offer = await peerPc.createOffer();
     await peerPc.setLocalDescription(offer);
     sendPeerSignal({ type: "offer", sdp: offer.sdp });
+    console.log("CLIENT: sent offer with translated track");
     makingOffer = false;
   }
 }
