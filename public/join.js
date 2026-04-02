@@ -13,10 +13,9 @@ const receiverCallView = document.getElementById("receiverCallView");
 const clientPhotoBg = document.getElementById("clientPhotoBg");
 const clientName = document.getElementById("clientName");
 const incomingInfo = document.getElementById("incomingInfo");
-const incomingBanner = document.getElementById("incomingBanner");
 const receiverCallTimer = document.getElementById("receiverCallTimer");
 const receiverCallStatus = document.getElementById("receiverCallStatus");
-const receiverBanner2 = document.getElementById("receiverBanner2");
+const receiverBanner = document.getElementById("receiverBanner");
 
 const inviteToken = location.pathname.split("/").pop();
 let currentSession = null;
@@ -27,10 +26,9 @@ let micStream = null;
 let remoteAudio = null;
 let timerId = null;
 let makingOffer = false;
-let ringerAudioContext = null;
-let ringerInterval = null;
+let ringerCtx = null;
+let ringerTimer = null;
 let answered = false;
-let shakeInterval = null;
 
 init();
 
@@ -40,11 +38,12 @@ async function init() {
     currentSession = payload.session;
     renderInvite();
     connectSocket();
-    setupSwipeControl(document.getElementById("acceptSwipe"), acceptCall);
-    setupSwipeControl(document.getElementById("endSwipe"), () => endConversation("ended_by_receiver"));
+    initSwipe("acceptSwipe", "acceptThumb", acceptCall);
+    initSwipe("endSwipe", "endThumb", () => endConversation("ended_by_receiver"));
     startRinging();
   } catch (error) {
-    incomingBanner.textContent = error.message || "Ссылка недоступна";
+    clientName.textContent = "Ошибка";
+    document.querySelector(".incoming-copy").textContent = error.message || "Ссылка недоступна";
   }
 }
 
@@ -55,47 +54,103 @@ function renderInvite() {
   }
 }
 
-function startRinging() {
-  // Start shake animation on the info block
-  incomingInfo.classList.add("shaking");
+/* ── swipe helper (touch-based, left→right) ── */
+function initSwipe(railId, thumbId, onComplete) {
+  const rail = document.getElementById(railId);
+  const thumb = document.getElementById(thumbId);
+  const fill = rail.querySelector(".swipe-rail-fill");
+  let active = false;
+  let startX = 0;
+  let pos = 0;
 
-  // Start ringtone sound synced with shake pulses
-  try {
-    ringerAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-  } catch {
-    // Audio not available
+  function maxX() {
+    return rail.clientWidth - thumb.clientWidth - 12;
+  }
+  function paint(x) {
+    pos = Math.max(0, Math.min(maxX(), x));
+    thumb.style.transform = `translateX(${pos}px)`;
+    fill.style.width = `${pos + thumb.clientWidth}px`;
   }
 
-  const ringBurst = () => {
-    if (answered || !ringerAudioContext) return;
-    const now = ringerAudioContext.currentTime;
-    // Two short beeps per burst
-    [0, 0.15].forEach((offset) => {
-      const osc = ringerAudioContext.createOscillator();
-      const gain = ringerAudioContext.createGain();
-      osc.type = "sine";
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.06, now + offset + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.12);
-      osc.connect(gain).connect(ringerAudioContext.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + 0.13);
-    });
-  };
+  // Touch events (most reliable on mobile)
+  thumb.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    active = true;
+    startX = e.touches[0].clientX - pos;
+  }, { passive: false });
 
-  // Shake: 600ms shake, 1200ms pause = 1800ms cycle
-  // Sync sound with shake start
-  ringBurst();
-  ringerInterval = setInterval(() => {
-    if (answered) {
-      clearInterval(ringerInterval);
-      return;
+  document.addEventListener("touchmove", (e) => {
+    if (!active) return;
+    paint(e.touches[0].clientX - startX);
+  }, { passive: true });
+
+  document.addEventListener("touchend", async () => {
+    if (!active) return;
+    active = false;
+    if (pos >= maxX() * 0.75) {
+      paint(maxX());
+      await onComplete();
+    } else {
+      paint(0);
     }
-    ringBurst();
-    // Re-trigger shake animation
+  });
+
+  // Mouse fallback for desktop
+  thumb.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    active = true;
+    startX = e.clientX - pos;
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!active) return;
+    paint(e.clientX - startX);
+  });
+  document.addEventListener("mouseup", async () => {
+    if (!active) return;
+    active = false;
+    if (pos >= maxX() * 0.75) {
+      paint(maxX());
+      await onComplete();
+    } else {
+      paint(0);
+    }
+  });
+
+  paint(0);
+}
+
+/* ── ringing: shake + sound ── */
+function startRinging() {
+  incomingInfo.classList.add("shaking");
+
+  try {
+    ringerCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ringerCtx.state === "suspended") ringerCtx.resume();
+  } catch { /* no audio */ }
+
+  function burst() {
+    if (answered || !ringerCtx) return;
+    const t = ringerCtx.currentTime;
+    [0, 0.15].forEach((off) => {
+      const o = ringerCtx.createOscillator();
+      const g = ringerCtx.createGain();
+      o.type = "sine";
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, t + off);
+      g.gain.exponentialRampToValueAtTime(0.08, t + off + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.12);
+      o.connect(g).connect(ringerCtx.destination);
+      o.start(t + off);
+      o.stop(t + off + 0.13);
+    });
+  }
+
+  burst();
+  ringerTimer = setInterval(() => {
+    if (answered) { clearInterval(ringerTimer); return; }
+    burst();
     incomingInfo.classList.remove("shaking");
-    void incomingInfo.offsetWidth; // force reflow
+    void incomingInfo.offsetWidth;
     incomingInfo.classList.add("shaking");
   }, 1800);
 }
@@ -103,96 +158,40 @@ function startRinging() {
 function stopRinging() {
   answered = true;
   incomingInfo.classList.remove("shaking");
-  if (ringerInterval) {
-    clearInterval(ringerInterval);
-    ringerInterval = null;
-  }
-  ringerAudioContext?.close?.().catch(() => {});
-  ringerAudioContext = null;
+  clearInterval(ringerTimer);
+  ringerCtx?.close?.().catch(() => {});
+  ringerCtx = null;
 }
 
+/* ── socket ── */
 function connectSocket() {
   ws = connectSignalSocket({
     sessionId: currentSession.id,
     role: "receiver",
-    onMessage: async (message) => {
-      if (message.type === "session.updated") {
-        currentSession = message.session;
+    onMessage: async (msg) => {
+      if (msg.type === "session.updated") {
+        currentSession = msg.session;
         if (["ended", "expired", "failed", "cancelled"].includes(currentSession.status)) {
           await teardownMedia();
-          receiverBanner2.textContent = "Собеседник завершил разговор.";
+          receiverBanner.textContent = "Собеседник завершил разговор.";
         }
       }
-      if (message.type === "session.ended") {
-        currentSession = message.session;
+      if (msg.type === "session.ended") {
+        currentSession = msg.session;
         await teardownMedia();
-        receiverBanner2.textContent = "Собеседник завершил разговор.";
+        receiverBanner.textContent = "Собеседник завершил разговор.";
       }
-      if (message.type === "peer.signal") {
-        await handlePeerSignal(message.payload);
+      if (msg.type === "peer.signal") {
+        await handlePeerSignal(msg.payload);
       }
     },
   });
 }
 
-function setupSwipeControl(root, onComplete) {
-  const thumb = root.querySelector(".swipe-thumb");
-  const fill = root.querySelector(".swipe-track-fill");
-  let dragging = false;
-  let startX = 0;
-  let current = 0;
-
-  const maxShift = () => root.clientWidth - thumb.clientWidth - 12;
-
-  const paint = (value) => {
-    current = Math.max(0, Math.min(maxShift(), value));
-    thumb.style.transform = `translateX(${current}px)`;
-    fill.style.width = `${current + thumb.clientWidth}px`;
-  };
-
-  const finish = async () => {
-    if (current >= maxShift() * 0.82) {
-      paint(maxShift());
-      root.classList.add("completed");
-      await onComplete();
-      return;
-    }
-    root.classList.remove("completed");
-    paint(0);
-  };
-
-  const start = (clientX) => {
-    dragging = true;
-    startX = clientX - current;
-  };
-
-  const move = (clientX) => {
-    if (!dragging) return;
-    paint(clientX - startX);
-  };
-
-  const end = async () => {
-    if (!dragging) return;
-    dragging = false;
-    await finish();
-  };
-
-  thumb.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    start(event.clientX);
-    thumb.setPointerCapture(event.pointerId);
-  });
-  thumb.addEventListener("pointermove", (event) => move(event.clientX));
-  thumb.addEventListener("pointerup", end);
-  thumb.addEventListener("pointercancel", end);
-
-  paint(0);
-}
-
+/* ── accept call ── */
 async function acceptCall() {
   if (answered) return;
   stopRinging();
-  incomingBanner.textContent = "Разрешите микрофон...";
 
   try {
     await ensureMic();
@@ -207,7 +206,7 @@ async function acceptCall() {
     incomingView.classList.add("hidden");
     receiverCallView.classList.remove("hidden");
     receiverCallStatus.textContent = "Подключение";
-    receiverBanner2.textContent = "Запускаем перевод и аудиоканал.";
+    receiverBanner.textContent = "Запускаем перевод.";
 
     await ensurePeerConnection(false);
     const token = await bootstrapRealtime({
@@ -223,7 +222,7 @@ async function acceptCall() {
         await attachTranslatedTrack(stream, track);
       },
       onState: (state) => {
-        receiverBanner2.textContent = state === "connected" ? "Перевод идёт автоматически." : `OpenAI: ${state}`;
+        receiverBanner.textContent = state === "connected" ? "Перевод идёт автоматически." : `OpenAI: ${state}`;
       },
     });
 
@@ -234,7 +233,7 @@ async function acceptCall() {
     answered = false;
     incomingView.classList.remove("hidden");
     receiverCallView.classList.add("hidden");
-    incomingBanner.textContent = error.message || "Не удалось подключиться.";
+    document.querySelector(".incoming-copy").textContent = error.message || "Не удалось подключиться.";
   }
 }
 
@@ -246,18 +245,15 @@ async function ensureMic() {
 async function ensurePeerConnection(isInitiator) {
   if (peerPc) return;
   peerPc = new RTCPeerConnection();
-
   peerPc.addEventListener("icecandidate", ({ candidate }) => {
     if (candidate) sendPeerSignal({ type: "ice", candidate });
   });
-
   peerPc.addEventListener("track", (event) => {
     remoteAudio = attachRemoteAudio(event.streams[0] || event.track);
     receiverCallStatus.textContent = "Разговор";
-    receiverBanner2.textContent = "Собеседник на линии.";
+    receiverBanner.textContent = "Собеседник на линии.";
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
-
   if (isInitiator) {
     makingOffer = true;
     const offer = await peerPc.createOffer();
@@ -269,9 +265,8 @@ async function ensurePeerConnection(isInitiator) {
 
 async function attachTranslatedTrack(stream, track) {
   if (!peerPc) await ensurePeerConnection(false);
-  const existing = peerPc.getSenders().find((sender) => sender.track?.id === track.id);
+  const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
   if (existing) return;
-
   peerPc.addTrack(track, stream);
   if (peerPc.signalingState === "stable" && !makingOffer) {
     makingOffer = true;
@@ -282,24 +277,21 @@ async function attachTranslatedTrack(stream, track) {
   }
 }
 
-async function handlePeerSignal(payload) {
+async function handlePeerSignal(p) {
   await ensurePeerConnection(false);
-
-  if (payload.type === "offer") {
-    await peerPc.setRemoteDescription({ type: "offer", sdp: payload.sdp });
+  if (p.type === "offer") {
+    await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
     const answer = await peerPc.createAnswer();
     await peerPc.setLocalDescription(answer);
     sendPeerSignal({ type: "answer", sdp: answer.sdp });
     return;
   }
-
-  if (payload.type === "answer") {
-    await peerPc.setRemoteDescription({ type: "answer", sdp: payload.sdp });
+  if (p.type === "answer") {
+    await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp });
     return;
   }
-
-  if (payload.type === "ice" && payload.candidate) {
-    await peerPc.addIceCandidate(payload.candidate);
+  if (p.type === "ice" && p.candidate) {
+    await peerPc.addIceCandidate(p.candidate);
   }
 }
 
@@ -329,7 +321,7 @@ async function endConversation(reason) {
     }).catch(() => {});
   }
   await teardownMedia();
-  receiverBanner2.textContent = reason === "declined_by_receiver" ? "Разговор отклонён." : "Разговор завершён.";
+  receiverBanner.textContent = "Разговор завершён.";
 }
 
 async function teardownMedia() {
@@ -338,7 +330,7 @@ async function teardownMedia() {
   peerPc = null;
   openAiPc = null;
   if (micStream) {
-    micStream.getTracks().forEach((track) => track.stop());
+    micStream.getTracks().forEach((t) => t.stop());
     micStream = null;
   }
   remoteAudio?.remove();

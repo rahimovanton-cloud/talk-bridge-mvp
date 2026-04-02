@@ -2,84 +2,76 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Контакт</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <main class="page app-shell">
-      <section class="phone-shell client-shell">
-        <div class="screen-dots">
-          <button type="button" class="screen-dot active" data-screen-jump="0" aria-label="QR-код"></button>
-          <button type="button" class="screen-dot" data-screen-jump="1" aria-label="Разговор"></button>
-          <button type="button" class="screen-dot" data-screen-jump="2" aria-label="Настройки"></button>
-        </div>
+  <body class="client-body">
+    <main class="client-fullscreen">
+      <div class="tab-bar">
+        <button type="button" class="tab-btn active" data-tab="0">QR</button>
+        <button type="button" class="tab-btn" data-tab="1">Звонок</button>
+        <button type="button" class="tab-btn" data-tab="2">Тех.</button>
+      </div>
 
-        <div id="clientSwipeTrack" class="swipe-track">
-          <!-- Screen 1: QR -->
-          <section class="panel-screen contact-screen">
-            <div class="screen-label">QR-код</div>
-            <div class="contact-copy">
-              <h1 class="hero-title">Позвольте поговорить с вами на вашем языке</h1>
-            </div>
-            <div class="qr-stage">
-              <div class="qr-stage-inner">
-                <div id="qrPlaceholder" class="qr-placeholder">Генерируем QR-код...</div>
-                <img id="qrImage" class="qr-image hidden" alt="QR invite" />
-                <div id="qrOverlay" class="qr-overlay hidden">
-                  <div class="qr-overlay-text">QR-код устарел</div>
-                  <button id="regenQrBtn" class="secondary-button" type="button">Обновите QR-код</button>
-                </div>
+      <div class="tab-panels">
+        <!-- Tab 0: QR -->
+        <section class="tab-panel active" data-panel="0">
+          <div class="qr-screen">
+            <h1 class="qr-title">Позвольте поговорить с вами на вашем языке</h1>
+            <div class="qr-box">
+              <div id="qrPlaceholder" class="qr-placeholder">Генерируем QR-код...</div>
+              <img id="qrImage" class="qr-image hidden" alt="QR invite" />
+              <div id="qrOverlay" class="qr-overlay hidden">
+                <div class="qr-overlay-text">QR-код устарел</div>
+                <button id="regenQrBtn" class="pill-btn" type="button">Обновите QR-код</button>
               </div>
             </div>
-            <div class="contact-footer">
-              <div class="footer-note">Отсканируйте QR-код для разговора</div>
-              <div id="contactHint" class="footer-meta">Сессия ещё не создана</div>
-            </div>
-          </section>
+            <div id="contactHint" class="qr-hint">Отсканируйте QR-код для разговора</div>
+          </div>
+        </section>
 
-          <!-- Screen 2: Call -->
-          <section class="panel-screen talk-screen">
-            <div class="screen-label">Разговор</div>
-            <div class="talk-core">
-              <div id="callStatus" class="talk-status">У вас пока нет текущей сессии</div>
-              <div id="callTimer" class="talk-timer hidden">00:00</div>
-              <div id="callSubstatus" class="talk-substatus">Создайте QR-код и дождитесь ответа собеседника.</div>
-            </div>
-            <div class="talk-actions">
-              <div class="swipe-control end-control hidden" id="clientEndSwipe">
-                <div class="swipe-track-fill"></div>
-                <div class="swipe-label">Свайп чтобы сбросить</div>
-                <div class="swipe-thumb end-thumb">✕</div>
+        <!-- Tab 1: Call -->
+        <section class="tab-panel" data-panel="1">
+          <div class="call-screen">
+            <div id="callStatus" class="call-status">У вас пока нет текущей сессии</div>
+            <div id="callTimer" class="call-timer hidden">00:00</div>
+            <div id="callSubstatus" class="call-sub">Создайте QR-код и дождитесь ответа.</div>
+            <div class="call-actions">
+              <div class="swipe-rail hidden" id="clientEndSwipe">
+                <div class="swipe-rail-fill"></div>
+                <div class="swipe-rail-label">Свайп чтобы сбросить →</div>
+                <div class="swipe-rail-thumb end-color" id="clientEndThumb">✕</div>
               </div>
             </div>
-          </section>
+          </div>
+        </section>
 
-          <!-- Screen 3: Settings / Technical -->
-          <section class="panel-screen settings-screen">
-            <div class="screen-label">Настройки</div>
-            <div class="settings-block">
-              <div class="settings-title">Модель перевода</div>
-              <div class="model-toggle wide-toggle">
+        <!-- Tab 2: Tech / Settings -->
+        <section class="tab-panel" data-panel="2">
+          <div class="tech-screen">
+            <div class="tech-block">
+              <div class="tech-label">Модель перевода</div>
+              <div class="model-toggle">
                 <button type="button" data-model="mini" class="active">Mini</button>
                 <button type="button" data-model="full">Full</button>
               </div>
-              <div id="modelMeta" class="settings-note">Mini · gpt-realtime-mini</div>
+              <div id="modelMeta" class="tech-meta">Mini · gpt-realtime-mini</div>
             </div>
-            <div class="settings-block">
-              <div class="settings-title">Статусы</div>
-              <div id="backendStatus" class="status-pill">Проверка backend...</div>
-              <div id="statusGrid" class="status-stack"></div>
+            <div class="tech-block">
+              <div class="tech-label">Статусы</div>
+              <div id="backendStatus" class="tech-pill">Проверка backend...</div>
+              <div id="statusGrid" class="tech-grid"></div>
             </div>
-            <div class="settings-block">
-              <div class="settings-title">Invite</div>
-              <button id="regenQrSettingsBtn" class="secondary-button" type="button">Обновить QR-код</button>
-              <button id="copyInviteBtn" class="secondary-button ghost" type="button">Скопировать ссылку</button>
-              <input id="inviteUrl" class="invite-input" readonly />
+            <div class="tech-block">
+              <div class="tech-label">Invite</div>
+              <button id="regenQrSettingsBtn" class="pill-btn" type="button">Обновить QR-код</button>
+              <button id="copyInviteBtn" class="pill-btn ghost" type="button">Скопировать ссылку</button>
+              <input id="inviteUrl" class="tech-input" readonly />
             </div>
-          </section>
-        </div>
-      </section>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script type="module" src="/client.js"></script>

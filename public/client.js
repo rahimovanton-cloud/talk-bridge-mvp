@@ -9,8 +9,8 @@ import {
   languageHint,
 } from "/shared.js";
 
-const swipeTrack = document.getElementById("clientSwipeTrack");
-const screenDots = [...document.querySelectorAll(".screen-dot")];
+const tabBtns = [...document.querySelectorAll(".tab-btn")];
+const tabPanels = [...document.querySelectorAll(".tab-panel")];
 const backendStatus = document.getElementById("backendStatus");
 const modelMeta = document.getElementById("modelMeta");
 const statusGrid = document.getElementById("statusGrid");
@@ -36,9 +36,6 @@ let micStream = null;
 let timerId = null;
 let remoteAudio = null;
 let makingOffer = false;
-let activeScreen = 0;
-let touchStartX = 0;
-let touchDeltaX = 0;
 let autoStartedSessionId = null;
 
 init();
@@ -59,34 +56,68 @@ async function checkBackend() {
   }
 }
 
+/* ── tabs ── */
+function setTab(index) {
+  tabBtns.forEach((b, i) => b.classList.toggle("active", i === index));
+  tabPanels.forEach((p, i) => p.classList.toggle("active", i === index));
+}
+
+/* ── swipe to end ── */
+function initSwipe(railId, thumbId, onComplete) {
+  const rail = document.getElementById(railId);
+  const thumb = document.getElementById(thumbId);
+  const fill = rail.querySelector(".swipe-rail-fill");
+  let active = false;
+  let startX = 0;
+  let pos = 0;
+
+  function maxX() { return rail.clientWidth - thumb.clientWidth - 12; }
+  function paint(x) {
+    pos = Math.max(0, Math.min(maxX(), x));
+    thumb.style.transform = `translateX(${pos}px)`;
+    fill.style.width = `${pos + thumb.clientWidth}px`;
+  }
+
+  thumb.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    active = true;
+    startX = e.touches[0].clientX - pos;
+  }, { passive: false });
+  document.addEventListener("touchmove", (e) => {
+    if (!active) return;
+    paint(e.touches[0].clientX - startX);
+  }, { passive: true });
+  document.addEventListener("touchend", async () => {
+    if (!active) return;
+    active = false;
+    if (pos >= maxX() * 0.75) { paint(maxX()); await onComplete(); }
+    else { paint(0); }
+  });
+
+  thumb.addEventListener("mousedown", (e) => { e.preventDefault(); active = true; startX = e.clientX - pos; });
+  document.addEventListener("mousemove", (e) => { if (!active) return; paint(e.clientX - startX); });
+  document.addEventListener("mouseup", async () => {
+    if (!active) return;
+    active = false;
+    if (pos >= maxX() * 0.75) { paint(maxX()); await onComplete(); }
+    else { paint(0); }
+  });
+
+  paint(0);
+}
+
 function bindEvents() {
+  tabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => setTab(Number(btn.dataset.tab)));
+  });
+
   document.querySelectorAll("[data-model]").forEach((button) => {
     button.addEventListener("click", async () => {
       if (selectedModel === button.dataset.model) return;
       selectedModel = button.dataset.model;
       renderModel();
       await createSession();
-      setScreen(2);
     });
-  });
-
-  screenDots.forEach((dot) => {
-    dot.addEventListener("click", () => setScreen(Number(dot.dataset.screenJump)));
-  });
-
-  swipeTrack.addEventListener("touchstart", (event) => {
-    touchStartX = event.touches[0].clientX;
-    touchDeltaX = 0;
-  }, { passive: true });
-
-  swipeTrack.addEventListener("touchmove", (event) => {
-    touchDeltaX = event.touches[0].clientX - touchStartX;
-  }, { passive: true });
-
-  swipeTrack.addEventListener("touchend", () => {
-    if (Math.abs(touchDeltaX) < 48) return;
-    if (touchDeltaX < 0 && activeScreen < 2) setScreen(activeScreen + 1);
-    if (touchDeltaX > 0 && activeScreen > 0) setScreen(activeScreen - 1);
   });
 
   copyInviteBtn.addEventListener("click", async () => {
@@ -97,69 +128,7 @@ function bindEvents() {
 
   regenQrBtn.addEventListener("click", createSession);
   regenQrSettingsBtn.addEventListener("click", createSession);
-
-  // Swipe to end call (client side)
-  setupSwipeControl(clientEndSwipe, () => endConversation("ended_by_client"));
-}
-
-function setupSwipeControl(root, onComplete) {
-  const thumb = root.querySelector(".swipe-thumb");
-  const fill = root.querySelector(".swipe-track-fill");
-  let dragging = false;
-  let startX = 0;
-  let current = 0;
-
-  const maxShift = () => root.clientWidth - thumb.clientWidth - 12;
-
-  const paint = (value) => {
-    current = Math.max(0, Math.min(maxShift(), value));
-    thumb.style.transform = `translateX(${current}px)`;
-    fill.style.width = `${current + thumb.clientWidth}px`;
-  };
-
-  const finish = async () => {
-    if (current >= maxShift() * 0.82) {
-      paint(maxShift());
-      root.classList.add("completed");
-      await onComplete();
-      return;
-    }
-    root.classList.remove("completed");
-    paint(0);
-  };
-
-  const start = (clientX) => {
-    dragging = true;
-    startX = clientX - current;
-  };
-
-  const move = (clientX) => {
-    if (!dragging) return;
-    paint(clientX - startX);
-  };
-
-  const end = async () => {
-    if (!dragging) return;
-    dragging = false;
-    await finish();
-  };
-
-  thumb.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    start(event.clientX);
-    thumb.setPointerCapture(event.pointerId);
-  });
-  thumb.addEventListener("pointermove", (event) => move(event.clientX));
-  thumb.addEventListener("pointerup", end);
-  thumb.addEventListener("pointercancel", end);
-
-  paint(0);
-}
-
-function setScreen(index) {
-  activeScreen = Math.max(0, Math.min(2, index));
-  swipeTrack.style.transform = `translateX(-${activeScreen * 100}%)`;
-  screenDots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === activeScreen));
+  initSwipe("clientEndSwipe", "clientEndThumb", () => endConversation("ended_by_client"));
 }
 
 function renderModel() {
@@ -198,15 +167,14 @@ async function createSession() {
     inviteUrlInput.value = payload.inviteUrl;
     contactHint.textContent = "Отсканируйте QR-код для разговора";
 
-    // Reset call screen to idle state
     callStatus.textContent = "У вас пока нет текущей сессии";
     callTimer.classList.add("hidden");
-    callSubstatus.textContent = "Создайте QR-код и дождитесь ответа собеседника.";
+    callSubstatus.textContent = "Создайте QR-код и дождитесь ответа.";
     clientEndSwipe.classList.add("hidden");
 
     connectSocket();
     renderSessionState();
-    setScreen(0);
+    setTab(0);
   } catch (error) {
     qrPlaceholder.textContent = error.message || "Не удалось создать QR";
     contactHint.textContent = "Попробуйте снова";
@@ -215,20 +183,17 @@ async function createSession() {
 
 function connectSocket() {
   if (!currentSession) return;
-  if (ws) {
-    ws.close();
-    ws = null;
-  }
+  if (ws) { ws.close(); ws = null; }
 
   ws = connectSignalSocket({
     sessionId: currentSession.id,
     role: "client",
-    onMessage: async (message) => {
-      if (message.type === "session.updated") {
-        currentSession = message.session;
+    onMessage: async (msg) => {
+      if (msg.type === "session.updated") {
+        currentSession = msg.session;
         renderSessionState();
         if (["accepted", "connecting", "active"].includes(currentSession.status)) {
-          setScreen(1);
+          setTab(1);
           if (autoStartedSessionId !== currentSession.id) {
             autoStartedSessionId = currentSession.id;
             await startConversation();
@@ -239,18 +204,18 @@ function connectSocket() {
         }
       }
 
-      if (message.type === "session.ended") {
-        currentSession = message.session;
+      if (msg.type === "session.ended") {
+        currentSession = msg.session;
         await teardownMedia();
         callStatus.textContent = "Разговор завершён";
-        callSubstatus.textContent = "Сгенерируйте новый QR-код для следующего разговора.";
+        callSubstatus.textContent = "Сгенерируйте новый QR-код.";
         callTimer.classList.add("hidden");
         clientEndSwipe.classList.add("hidden");
         markQrExpired();
       }
 
-      if (message.type === "peer.signal") {
-        await handlePeerSignal(message.payload);
+      if (msg.type === "peer.signal") {
+        await handlePeerSignal(msg.payload);
       }
     },
   });
@@ -281,23 +246,23 @@ function renderSessionState() {
   ];
 
   statusGrid.innerHTML = items
-    .map(([label, value]) => `<div class="status-row-card"><span>${label}</span><strong>${value}</strong></div>`)
+    .map(([l, v]) => `<div class="tech-row"><span>${l}</span><strong>${v}</strong></div>`)
     .join("");
 
   const expiresAt = new Date(currentSession.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   contactHint.textContent = currentSession.status === "active"
     ? "Разговор идёт"
-    : `Отсканируйте QR-код для разговора · до ${expiresAt}`;
+    : `Отсканируйте QR-код · до ${expiresAt}`;
 
   if (currentSession.status === "ringing") {
     callStatus.textContent = "Идёт вызов";
-    callSubstatus.textContent = "Ждём свайп-ответ от собеседника.";
+    callSubstatus.textContent = "Ждём ответ собеседника.";
     callTimer.classList.add("hidden");
     clientEndSwipe.classList.add("hidden");
   }
   if (currentSession.status === "accepted") {
     callStatus.textContent = "Ответ получен";
-    callSubstatus.textContent = "Подключаем перевод автоматически.";
+    callSubstatus.textContent = "Подключаем перевод.";
   }
   if (currentSession.status === "connecting") {
     callStatus.textContent = "Подключение";
@@ -317,9 +282,8 @@ function markQrExpired() {
 
 async function startConversation() {
   if (!currentSession || openAiPc) return;
-
   callStatus.textContent = "Подключение";
-  callSubstatus.textContent = "Запрашиваем микрофон и запускаем перевод.";
+  callSubstatus.textContent = "Запрашиваем микрофон.";
 
   try {
     await ensureMic();
@@ -333,9 +297,7 @@ async function startConversation() {
     const realtime = await connectOpenAiRealtime({
       token,
       micStream,
-      onTrack: async (track, stream) => {
-        await attachTranslatedTrack(stream, track);
-      },
+      onTrack: async (track, stream) => { await attachTranslatedTrack(stream, track); },
       onState: (state) => {
         if (state === "connected") {
           callStatus.textContent = "Разговор";
@@ -347,10 +309,7 @@ async function startConversation() {
     });
 
     openAiPc = realtime.pc;
-    ws?.send(JSON.stringify({
-      type: "participant.state",
-      patch: { micGranted: true, realtimeConnected: true },
-    }));
+    ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
   } catch (error) {
     callStatus.textContent = "Ошибка";
@@ -366,25 +325,21 @@ async function ensureMic() {
 async function ensurePeerConnection(isInitiator) {
   if (peerPc) return;
   peerPc = new RTCPeerConnection();
-
   peerPc.addEventListener("icecandidate", ({ candidate }) => {
     if (candidate) sendPeerSignal({ type: "ice", candidate });
   });
-
   peerPc.addEventListener("track", (event) => {
     remoteAudio = attachRemoteAudio(event.streams[0] || event.track);
     callStatus.textContent = "Разговор";
     callSubstatus.textContent = "Собеседник подключён.";
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
-
   peerPc.addEventListener("connectionstatechange", () => {
     if (peerPc.connectionState === "connected") {
       callStatus.textContent = "Разговор";
       callSubstatus.textContent = "Канал связи стабилен.";
     }
   });
-
   if (isInitiator) {
     makingOffer = true;
     const offer = await peerPc.createOffer();
@@ -396,9 +351,8 @@ async function ensurePeerConnection(isInitiator) {
 
 async function attachTranslatedTrack(stream, track) {
   if (!peerPc) await ensurePeerConnection(true);
-  const existing = peerPc.getSenders().find((sender) => sender.track?.id === track.id);
+  const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
   if (existing) return;
-
   peerPc.addTrack(track, stream);
   if (peerPc.signalingState === "stable" && !makingOffer) {
     makingOffer = true;
@@ -409,26 +363,18 @@ async function attachTranslatedTrack(stream, track) {
   }
 }
 
-async function handlePeerSignal(payload) {
+async function handlePeerSignal(p) {
   if (!currentSession) return;
   await ensurePeerConnection(false);
-
-  if (payload.type === "offer") {
-    await peerPc.setRemoteDescription({ type: "offer", sdp: payload.sdp });
+  if (p.type === "offer") {
+    await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
     const answer = await peerPc.createAnswer();
     await peerPc.setLocalDescription(answer);
     sendPeerSignal({ type: "answer", sdp: answer.sdp });
     return;
   }
-
-  if (payload.type === "answer") {
-    await peerPc.setRemoteDescription({ type: "answer", sdp: payload.sdp });
-    return;
-  }
-
-  if (payload.type === "ice" && payload.candidate) {
-    await peerPc.addIceCandidate(payload.candidate);
-  }
+  if (p.type === "answer") { await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp }); return; }
+  if (p.type === "ice" && p.candidate) { await peerPc.addIceCandidate(p.candidate); }
 }
 
 function sendPeerSignal(payload) {
@@ -472,10 +418,7 @@ async function teardownMedia() {
   [peerPc, openAiPc].forEach((pc) => pc?.close());
   peerPc = null;
   openAiPc = null;
-  if (micStream) {
-    micStream.getTracks().forEach((track) => track.stop());
-    micStream = null;
-  }
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
   remoteAudio?.remove();
   remoteAudio = null;
 }

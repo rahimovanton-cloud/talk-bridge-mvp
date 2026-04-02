@@ -2,45 +2,44 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Входящий разговор</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="receiver-body">
-    <div id="receiverBg" class="receiver-bg">
-      <img id="clientPhotoBg" class="receiver-bg-photo" alt="" />
+    <div class="receiver-bg">
+      <img id="clientPhotoBg" class="receiver-bg-photo" src="/assets/client-photo.jpg" alt="" />
       <div class="receiver-bg-overlay"></div>
     </div>
 
     <main class="receiver-fullscreen">
-      <div id="incomingView" class="receiver-incoming active">
-        <div class="incoming-spacer"></div>
+      <div id="incomingView" class="receiver-view active">
+        <div class="rv-top"></div>
         <div class="incoming-info" id="incomingInfo">
           <h1 id="clientName" class="incoming-name">...</h1>
           <p class="incoming-copy">Ответьте на звонок, чтобы поговорить</p>
         </div>
-        <div class="incoming-bottom">
-          <div class="swipe-control answer-control" id="acceptSwipe">
-            <div class="swipe-track-fill"></div>
-            <div class="swipe-label">Свайп чтобы ответить</div>
-            <div class="swipe-thumb answer-thumb">📞</div>
+        <div class="rv-bottom">
+          <div class="swipe-rail" id="acceptSwipe">
+            <div class="swipe-rail-fill"></div>
+            <div class="swipe-rail-label">Свайп чтобы ответить →</div>
+            <div class="swipe-rail-thumb answer-color" id="acceptThumb">📞</div>
           </div>
-          <div id="incomingBanner" class="receiver-banner">После ответа браузер запросит доступ к микрофону.</div>
         </div>
       </div>
 
-      <div id="receiverCallView" class="receiver-call hidden">
-        <div class="call-spacer"></div>
-        <div class="call-center">
+      <div id="receiverCallView" class="receiver-view hidden">
+        <div class="rv-top"></div>
+        <div class="rv-center">
           <div id="receiverCallStatus" class="talk-status">Подключение</div>
           <div id="receiverCallTimer" class="talk-timer">00:00</div>
-          <div id="receiverBanner2" class="talk-substatus">Идёт соединение.</div>
+          <div id="receiverBanner" class="rv-substatus">Идёт соединение.</div>
         </div>
-        <div class="call-bottom">
-          <div class="swipe-control end-control" id="endSwipe">
-            <div class="swipe-track-fill"></div>
-            <div class="swipe-label">Свайп чтобы сбросить</div>
-            <div class="swipe-thumb end-thumb">✕</div>
+        <div class="rv-bottom">
+          <div class="swipe-rail" id="endSwipe">
+            <div class="swipe-rail-fill"></div>
+            <div class="swipe-rail-label">Свайп чтобы сбросить →</div>
+            <div class="swipe-rail-thumb end-color" id="endThumb">✕</div>
           </div>
         </div>
       </div>
