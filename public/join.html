@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Incoming Talk Bridge</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="shell">
+        <div id="incomingView" class="incoming-screen">
+          <div class="chip">Входящий разговор</div>
+          <img id="clientPhoto" class="avatar hidden" alt="Client photo" />
+          <div id="clientInitial" class="avatar"></div>
+          <div>
+            <h1 id="clientName" class="headline" style="font-size: clamp(34px, 10vw, 58px); max-width: none;">...</h1>
+            <p class="subtle">Хочет поговорить с вами на вашем языке</p>
+          </div>
+          <div id="incomingBanner" class="banner">После ответа браузер запросит доступ к микрофону.</div>
+          <div class="dual-actions">
+            <button id="acceptBtn" class="answer" type="button">Ответить</button>
+            <button id="declineBtn" class="decrease decline" type="button">Отклонить</button>
+          </div>
+        </div>
+
+        <div id="receiverCallView" class="call-screen hidden">
+          <div class="chip">Собеседник</div>
+          <div class="call-timer" id="receiverCallTimer">00:00</div>
+          <div class="call-status" id="receiverCallStatus">Подключение</div>
+          <div id="receiverBanner" class="banner">Идёт соединение с OpenAI Realtime и аудиоканалом собеседника.</div>
+          <button id="receiverEndBtn" class="hangup" type="button">Завершить</button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/join.js"></script>
+  </body>
+</html>

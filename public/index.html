@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Talk Bridge MVP</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="shell">
+        <div id="homeView">
+          <div class="topbar">
+            <div class="chip">Talk Bridge MVP</div>
+            <div id="backendStatus" class="chip">Проверка backend...</div>
+          </div>
+          <div class="hero">
+            <section class="panel">
+              <div class="status-row">
+                <div class="model-toggle">
+                  <button type="button" data-model="mini" class="active">Mini</button>
+                  <button type="button" data-model="full">Full</button>
+                </div>
+                <div class="chip" id="modelMeta">Mini · gpt-realtime-mini</div>
+              </div>
+              <h1 class="headline">Позвольте поговорить с вами на вашем языке</h1>
+              <p class="subtle">
+                Покажите этот экран собеседнику. Он откроет ссылку по QR-коду и попадёт на экран входящего разговора.
+              </p>
+              <div class="controls">
+                <button id="showQrBtn" class="primary" type="button">Показать QR</button>
+                <button id="startCallBtn" class="secondary hidden" type="button">Запустить разговор</button>
+              </div>
+              <div class="status-grid" id="statusGrid"></div>
+            </section>
+            <aside class="panel qr-card">
+              <div id="emptyQrState" class="subtle">QR появится после создания invite.</div>
+              <div id="qrState" class="hidden">
+                <div class="qr-wrap">
+                  <img id="qrImage" alt="Invite QR" />
+                </div>
+                <div class="copy-row">
+                  <input id="inviteUrl" readonly />
+                  <button id="copyInviteBtn" class="secondary" type="button">Скопировать ссылку</button>
+                </div>
+                <div id="sessionMeta" class="banner"></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <div id="callView" class="call-screen hidden">
+          <div class="chip" id="callRoleLabel">Клиент</div>
+          <div class="call-timer" id="callTimer">00:00</div>
+          <div class="call-status" id="callStatus">Подключение</div>
+          <div id="callBanner" class="banner">Разговор строится через OpenAI Realtime и peer audio между браузерами.</div>
+          <button id="endCallBtn" class="hangup" type="button">Завершить разговор</button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>

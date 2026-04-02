@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: talk-bridge-mvp
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: DEFAULT_CLIENT_NAME
+        value: Anton
+      - key: DEFAULT_CLIENT_PHOTO_URL
+        value: /assets/client-photo.jpg
+      - key: DEFAULT_LANGUAGE_HINT
+        value: ru
