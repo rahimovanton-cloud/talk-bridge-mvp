@@ -362,7 +362,7 @@ async function startConversation() {
     await ensureMic();
     callSubstatus.textContent = "Микрофон получен. Подключаем перевод.";
 
-    await ensurePeerConnection(false);
+    await ensurePeerConnection();
     callSubstatus.textContent = "Получаем ключ OpenAI.";
 
     const bootstrap = await bootstrapRealtime({
@@ -412,18 +412,40 @@ async function ensureMic() {
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 }
 
-async function ensurePeerConnection(isInitiator) {
+async function ensurePeerConnection() {
   if (peerPc) return;
   peerPc = new RTCPeerConnection(PEER_ICE_CONFIG);
+
+  // Pre-create audio transceiver so SDP always has audio media section
+  peerPc.addTransceiver("audio", { direction: "sendrecv" });
+
   peerPc.addEventListener("icecandidate", ({ candidate }) => {
     if (candidate) sendPeerSignal({ type: "ice", candidate });
   });
+
   peerPc.addEventListener("track", (event) => {
+    console.log("CLIENT: received peer track", event.track.kind, event.track.id);
     remoteAudio = attachRemoteAudio(event.streams[0] || event.track);
     callStatus.textContent = "Разговор";
     callSubstatus.textContent = "Собеседник подключён.";
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
+
+  // Perfect Negotiation: CLIENT is the IMPOLITE side
+  peerPc.addEventListener("negotiationneeded", async () => {
+    try {
+      makingOffer = true;
+      const offer = await peerPc.createOffer();
+      if (peerPc.signalingState !== "stable") return;
+      await peerPc.setLocalDescription(offer);
+      sendPeerSignal({ type: "offer", sdp: peerPc.localDescription.sdp });
+    } catch (e) {
+      console.error("CLIENT: negotiationneeded error:", e);
+    } finally {
+      makingOffer = false;
+    }
+  });
+
   peerPc.addEventListener("iceconnectionstatechange", () => {
     console.log("CLIENT ICE connection:", peerPc.iceConnectionState);
   });
@@ -434,48 +456,48 @@ async function ensurePeerConnection(isInitiator) {
       callSubstatus.textContent = "Канал связи стабилен.";
     }
   });
-  if (isInitiator) {
-    makingOffer = true;
-    const offer = await peerPc.createOffer();
-    await peerPc.setLocalDescription(offer);
-    sendPeerSignal({ type: "offer", sdp: offer.sdp });
-    makingOffer = false;
-  }
 }
 
 async function attachTranslatedTrack(stream, track) {
   try {
-    if (!peerPc) await ensurePeerConnection(false);
+    if (!peerPc) await ensurePeerConnection();
     const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
     if (existing) return;
     console.log("CLIENT: adding translated track to peer connection", track.kind, track.id);
     peerPc.addTrack(track, stream);
-    if (!makingOffer) {
-      makingOffer = true;
-      const offer = await peerPc.createOffer();
-      await peerPc.setLocalDescription(offer);
-      sendPeerSignal({ type: "offer", sdp: offer.sdp });
-      console.log("CLIENT: sent offer with translated track");
-      makingOffer = false;
-    }
+    // negotiationneeded event will fire automatically and handle the offer
   } catch (e) {
     console.error("CLIENT: attachTranslatedTrack error:", e);
-    makingOffer = false;
   }
 }
 
 async function handlePeerSignal(p) {
   if (!currentSession) return;
-  await ensurePeerConnection(false);
+  await ensurePeerConnection();
+
   if (p.type === "offer") {
+    // IMPOLITE side: if we're making an offer, ignore the incoming one (we win)
+    if (makingOffer || peerPc.signalingState !== "stable") {
+      console.log("CLIENT (impolite): ignoring offer, we have priority");
+      return;
+    }
     await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
     const answer = await peerPc.createAnswer();
     await peerPc.setLocalDescription(answer);
     sendPeerSignal({ type: "answer", sdp: answer.sdp });
     return;
   }
-  if (p.type === "answer") { await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp }); return; }
-  if (p.type === "ice" && p.candidate) { await peerPc.addIceCandidate(p.candidate); }
+  if (p.type === "answer") {
+    if (peerPc.signalingState === "have-local-offer") {
+      await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp });
+    }
+    return;
+  }
+  if (p.type === "ice" && p.candidate) {
+    try { await peerPc.addIceCandidate(p.candidate); } catch (e) {
+      console.warn("CLIENT: addIceCandidate error (non-fatal):", e);
+    }
+  }
 }
 
 function sendPeerSignal(payload) {
