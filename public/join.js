@@ -16,6 +16,7 @@ const incomingInfo = document.getElementById("incomingInfo");
 const receiverCallTimer = document.getElementById("receiverCallTimer");
 const receiverCallStatus = document.getElementById("receiverCallStatus");
 const receiverBanner = document.getElementById("receiverBanner");
+const receiverEndView = document.getElementById("receiverEndView");
 
 const inviteToken = location.pathname.split("/").pop();
 let currentSession = null;
@@ -158,13 +159,13 @@ function connectSocket() {
         currentSession = msg.session;
         if (["ended", "expired", "failed", "cancelled"].includes(currentSession.status)) {
           await teardownMedia();
-          receiverBanner.textContent = "Собеседник завершил разговор.";
+          showEndView();
         }
       }
       if (msg.type === "session.ended") {
         currentSession = msg.session;
         await teardownMedia();
-        receiverBanner.textContent = "Собеседник завершил разговор.";
+        showEndView();
       }
       if (msg.type === "peer.signal") {
         await handlePeerSignal(msg.payload);
@@ -177,11 +178,19 @@ function connectSocket() {
 function showIncoming() {
   incomingView.style.display = "flex";
   receiverCallView.style.display = "none";
+  receiverEndView.style.display = "none";
 }
 
 function showCallView() {
   incomingView.style.display = "none";
   receiverCallView.style.display = "flex";
+  receiverEndView.style.display = "none";
+}
+
+function showEndView() {
+  incomingView.style.display = "none";
+  receiverCallView.style.display = "none";
+  receiverEndView.style.display = "flex";
 }
 
 /* ── accept call ── */
@@ -313,7 +322,7 @@ async function endConversation(reason) {
     }).catch(() => {});
   }
   await teardownMedia();
-  receiverBanner.textContent = "Разговор завершён.";
+  showEndView();
 }
 
 async function teardownMedia() {

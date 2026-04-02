@@ -208,13 +208,16 @@ function connectSocket() {
       }
 
       if (msg.type === "session.ended") {
+        const finalDuration = callTimer.textContent || "00:00";
         currentSession = msg.session;
         await teardownMedia();
         callStatus.textContent = "Разговор завершён";
-        callSubstatus.textContent = "Сгенерируйте новый QR-код.";
-        callTimer.classList.add("hidden");
+        callTimer.textContent = finalDuration;
+        callTimer.classList.remove("hidden");
+        callSubstatus.textContent = "";
         clientEndSwipe.classList.add("hidden");
         markQrExpired();
+        setTab(1);
       }
 
       if (msg.type === "peer.signal") {
@@ -413,6 +416,9 @@ function stopTimer() {
 }
 
 async function endConversation(reason, options = {}) {
+  // Capture call duration before teardown
+  const finalDuration = callTimer.textContent || "00:00";
+
   if (currentSession) {
     await fetchJson("/api/session/end", {
       method: "POST",
@@ -422,10 +428,12 @@ async function endConversation(reason, options = {}) {
   await teardownMedia();
   if (!options.silent) {
     callStatus.textContent = "Разговор завершён";
-    callSubstatus.textContent = "Для нового разговора обновите QR-код.";
-    callTimer.classList.add("hidden");
+    callTimer.textContent = finalDuration;
+    callTimer.classList.remove("hidden");
+    callSubstatus.textContent = "";
     clientEndSwipe.classList.add("hidden");
     markQrExpired();
+    setTab(1);
   }
 }
 
