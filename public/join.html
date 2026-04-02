@@ -3,33 +3,52 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Incoming Talk Bridge</title>
+    <title>Входящий разговор</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="page">
-      <section class="shell">
-        <div id="incomingView" class="incoming-screen">
-          <div class="chip">Входящий разговор</div>
-          <img id="clientPhoto" class="avatar hidden" alt="Client photo" />
-          <div id="clientInitial" class="avatar"></div>
-          <div>
-            <h1 id="clientName" class="headline" style="font-size: clamp(34px, 10vw, 58px); max-width: none;">...</h1>
-            <p class="subtle">Хочет поговорить с вами на вашем языке</p>
+    <main class="page app-shell">
+      <section class="phone-shell receiver-shell">
+        <div id="incomingView" class="receiver-screen active">
+          <div class="incoming-topline">Входящий разговор</div>
+          <div class="incoming-identity">
+            <img id="clientPhoto" class="avatar hidden" alt="Client photo" />
+            <div id="clientInitial" class="avatar avatar-initial"></div>
+            <div>
+              <h1 id="clientName" class="incoming-name">...</h1>
+              <p class="incoming-copy">Хочет поговорить с вами на вашем языке</p>
+            </div>
           </div>
-          <div id="incomingBanner" class="banner">После ответа браузер запросит доступ к микрофону.</div>
-          <div class="dual-actions">
-            <button id="acceptBtn" class="answer" type="button">Ответить</button>
-            <button id="declineBtn" class="decrease decline" type="button">Отклонить</button>
+
+          <div class="ringer-zone">
+            <div class="ringer-wave wave-1"></div>
+            <div class="ringer-wave wave-2"></div>
+            <div class="ringer-wave wave-3"></div>
+            <div class="swipe-control answer-control" id="acceptSwipe">
+              <div class="swipe-track-fill"></div>
+              <div class="swipe-label">Свайп чтобы ответить</div>
+              <div class="swipe-thumb answer-thumb">📞</div>
+            </div>
           </div>
+
+          <button id="declineBtn" class="ghost-danger" type="button">Отклонить</button>
+          <div id="incomingBanner" class="receiver-banner">После ответа браузер запросит доступ к микрофону.</div>
         </div>
 
-        <div id="receiverCallView" class="call-screen hidden">
-          <div class="chip">Собеседник</div>
-          <div class="call-timer" id="receiverCallTimer">00:00</div>
-          <div class="call-status" id="receiverCallStatus">Подключение</div>
-          <div id="receiverBanner" class="banner">Идёт соединение с OpenAI Realtime и аудиоканалом собеседника.</div>
-          <button id="receiverEndBtn" class="hangup" type="button">Завершить</button>
+        <div id="receiverCallView" class="receiver-screen hidden">
+          <div class="incoming-topline">Разговор активен</div>
+          <div class="talk-core receiver-talk-core">
+            <div id="receiverCallStatus" class="talk-status">Подключение</div>
+            <div id="receiverCallTimer" class="talk-timer">00:00</div>
+            <div id="receiverBanner" class="talk-substatus">Идёт соединение.</div>
+          </div>
+          <div class="receiver-end-zone">
+            <div class="swipe-control end-control" id="endSwipe">
+              <div class="swipe-track-fill"></div>
+              <div class="swipe-label">Свайп чтобы сбросить</div>
+              <div class="swipe-thumb end-thumb">✕</div>
+            </div>
+          </div>
         </div>
       </section>
     </main>

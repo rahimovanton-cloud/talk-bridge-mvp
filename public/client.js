@@ -2,32 +2,30 @@ import {
   MODEL_LABELS,
   attachRemoteAudio,
   bootstrapRealtime,
-  clearErrorBanner,
   connectOpenAiRealtime,
   connectSignalSocket,
   fetchJson,
   formatDuration,
   languageHint,
-  setErrorBanner,
 } from "/shared.js";
 
+const swipeTrack = document.getElementById("clientSwipeTrack");
+const screenDots = [...document.querySelectorAll(".screen-dot")];
 const backendStatus = document.getElementById("backendStatus");
 const modelMeta = document.getElementById("modelMeta");
-const showQrBtn = document.getElementById("showQrBtn");
-const startCallBtn = document.getElementById("startCallBtn");
 const statusGrid = document.getElementById("statusGrid");
-const emptyQrState = document.getElementById("emptyQrState");
-const qrState = document.getElementById("qrState");
+const qrPlaceholder = document.getElementById("qrPlaceholder");
 const qrImage = document.getElementById("qrImage");
+const qrOverlay = document.getElementById("qrOverlay");
+const contactHint = document.getElementById("contactHint");
 const inviteUrlInput = document.getElementById("inviteUrl");
 const copyInviteBtn = document.getElementById("copyInviteBtn");
-const sessionMeta = document.getElementById("sessionMeta");
-const homeView = document.getElementById("homeView");
-const callView = document.getElementById("callView");
+const regenQrBtn = document.getElementById("regenQrBtn");
+const regenQrSettingsBtn = document.getElementById("regenQrSettingsBtn");
 const callStatus = document.getElementById("callStatus");
+const callSubstatus = document.getElementById("callSubstatus");
 const callTimer = document.getElementById("callTimer");
 const endCallBtn = document.getElementById("endCallBtn");
-const callBanner = document.getElementById("callBanner");
 
 let selectedModel = "mini";
 let currentSession = null;
@@ -37,36 +35,75 @@ let openAiPc = null;
 let micStream = null;
 let timerId = null;
 let remoteAudio = null;
-let translatedTrack = null;
 let makingOffer = false;
+let activeScreen = 0;
+let touchStartX = 0;
+let touchDeltaX = 0;
+let autoStartedSessionId = null;
+
+init();
 
 async function init() {
+  await checkBackend();
+  renderModel();
+  bindEvents();
+  await createSession();
+}
+
+async function checkBackend() {
   try {
     await fetchJson("/health");
     backendStatus.textContent = "Backend ready";
   } catch {
     backendStatus.textContent = "Backend недоступен";
   }
-
-  renderModel();
-  bindEvents();
 }
 
 function bindEvents() {
   document.querySelectorAll("[data-model]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      if (selectedModel === button.dataset.model) return;
       selectedModel = button.dataset.model;
       renderModel();
+      await createSession();
+      setScreen(2);
     });
   });
 
-  showQrBtn.addEventListener("click", createSession);
-  startCallBtn.addEventListener("click", startConversation);
-  copyInviteBtn.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(inviteUrlInput.value);
-    sessionMeta.textContent = "Ссылка скопирована";
+  screenDots.forEach((dot) => {
+    dot.addEventListener("click", () => setScreen(Number(dot.dataset.screenJump)));
   });
+
+  swipeTrack.addEventListener("touchstart", (event) => {
+    touchStartX = event.touches[0].clientX;
+    touchDeltaX = 0;
+  }, { passive: true });
+
+  swipeTrack.addEventListener("touchmove", (event) => {
+    touchDeltaX = event.touches[0].clientX - touchStartX;
+  }, { passive: true });
+
+  swipeTrack.addEventListener("touchend", () => {
+    if (Math.abs(touchDeltaX) < 48) return;
+    if (touchDeltaX < 0 && activeScreen < 2) setScreen(activeScreen + 1);
+    if (touchDeltaX > 0 && activeScreen > 0) setScreen(activeScreen - 1);
+  });
+
+  copyInviteBtn.addEventListener("click", async () => {
+    if (!inviteUrlInput.value) return;
+    await navigator.clipboard.writeText(inviteUrlInput.value);
+    contactHint.textContent = "Ссылка скопирована";
+  });
+
+  regenQrBtn.addEventListener("click", createSession);
+  regenQrSettingsBtn.addEventListener("click", createSession);
   endCallBtn.addEventListener("click", () => endConversation("ended_by_client"));
+}
+
+function setScreen(index) {
+  activeScreen = Math.max(0, Math.min(2, index));
+  swipeTrack.style.transform = `translateX(-${activeScreen * 100}%)`;
+  screenDots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === activeScreen));
 }
 
 function renderModel() {
@@ -77,10 +114,16 @@ function renderModel() {
 }
 
 async function createSession() {
-  showQrBtn.disabled = true;
-  clearErrorBanner(sessionMeta, "Создание invite...");
+  qrOverlay.classList.add("hidden");
+  qrPlaceholder.textContent = "Генерируем QR-код...";
+  qrPlaceholder.classList.remove("hidden");
+  qrImage.classList.add("hidden");
 
   try {
+    if (currentSession) {
+      await endConversation("regenerated_by_client", { silent: true });
+    }
+
     const payload = await fetchJson("/api/session/create", {
       method: "POST",
       body: JSON.stringify({
@@ -92,23 +135,28 @@ async function createSession() {
     });
 
     currentSession = payload.session;
+    autoStartedSessionId = null;
     qrImage.src = payload.qrDataUrl;
+    qrImage.classList.remove("hidden");
+    qrPlaceholder.classList.add("hidden");
     inviteUrlInput.value = payload.inviteUrl;
-    emptyQrState.classList.add("hidden");
-    qrState.classList.remove("hidden");
-    sessionMeta.textContent = `Сессия активна до ${new Date(payload.expiresAt).toLocaleTimeString()}`;
-    startCallBtn.classList.remove("hidden");
+    contactHint.textContent = "Отсканируйте чтобы поговорить";
     connectSocket();
     renderSessionState();
+    setScreen(0);
   } catch (error) {
-    setErrorBanner(sessionMeta, error.message);
-  } finally {
-    showQrBtn.disabled = false;
+    qrPlaceholder.textContent = error.message || "Не удалось создать QR";
+    contactHint.textContent = "Попробуйте снова";
   }
 }
 
 function connectSocket() {
-  if (!currentSession || ws) return;
+  if (!currentSession) return;
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+
   ws = connectSignalSocket({
     sessionId: currentSession.id,
     role: "client",
@@ -116,49 +164,93 @@ function connectSocket() {
       if (message.type === "session.updated") {
         currentSession = message.session;
         renderSessionState();
+        if (["accepted", "connecting", "active"].includes(currentSession.status)) {
+          setScreen(1);
+          if (autoStartedSessionId !== currentSession.id) {
+            autoStartedSessionId = currentSession.id;
+            await startConversation();
+          }
+        }
+        if (["expired", "failed", "cancelled"].includes(currentSession.status)) {
+          markQrExpired();
+        }
       }
+
       if (message.type === "session.ended") {
         currentSession = message.session;
         await teardownMedia();
-        showEndedState(currentSession.endReason || "Разговор завершён");
+        callStatus.textContent = "Разговор завершён";
+        callSubstatus.textContent = "Сгенерируйте новый QR-код для следующего разговора.";
+        markQrExpired();
       }
+
       if (message.type === "peer.signal") {
         await handlePeerSignal(message.payload);
       }
     },
   });
-
-  ws.addEventListener("open", () => renderSessionState());
 }
 
 function renderSessionState() {
   if (!currentSession) return;
 
+  const mapping = {
+    created: "Готово",
+    qr_displayed: "QR показан",
+    opened: "Собеседник открыл ссылку",
+    ringing: "Идёт вызов",
+    accepted: "Собеседник ответил",
+    connecting: "Соединяем перевод",
+    active: "Разговор активен",
+    ended: "Разговор завершён",
+    expired: "QR истёк",
+    failed: "Ошибка",
+  };
+
   const items = [
-    ["Статус", currentSession.status],
-    ["Собеседник", currentSession.receiverState.wsConnected ? "На линии" : "Не подключён"],
+    ["Сессия", mapping[currentSession.status] || currentSession.status],
     ["Модель", MODEL_LABELS[currentSession.model]],
-    ["Язык клиента", currentSession.clientLanguageHint || "auto"],
-    ["Язык собеседника", currentSession.receiverLanguageHint || currentSession.receiverState.languageHint || "auto"],
+    ["Backend", backendStatus.textContent],
+    ["Собеседник", currentSession.receiverState.wsConnected ? "На линии" : "Ещё не подключён"],
+    ["Язык", currentSession.receiverLanguageHint || currentSession.receiverState.languageHint || "Авто"],
   ];
 
   statusGrid.innerHTML = items
-    .map(([label, value]) => `<div class="status-item"><span>${label}</span><strong>${value}</strong></div>`)
+    .map(([label, value]) => `<div class="status-row-card"><span>${label}</span><strong>${value}</strong></div>`)
     .join("");
 
+  const expiresAt = new Date(currentSession.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  contactHint.textContent = currentSession.status === "active"
+    ? "Разговор идёт"
+    : `Отсканируйте чтобы поговорить · до ${expiresAt}`;
+
+  if (currentSession.status === "ringing") {
+    callStatus.textContent = "Идёт вызов";
+    callSubstatus.textContent = "Ждём свайп-ответ от собеседника.";
+  }
   if (currentSession.status === "accepted") {
-    startCallBtn.textContent = "Начать перевод";
-    startCallBtn.disabled = false;
+    callStatus.textContent = "Ответ получен";
+    callSubstatus.textContent = "Подключаем перевод автоматически.";
+  }
+  if (currentSession.status === "connecting") {
+    callStatus.textContent = "Подключение";
+    callSubstatus.textContent = "Настраиваем аудио и перевод.";
+  }
+  if (currentSession.status === "active") {
+    callStatus.textContent = "Разговор";
+    callSubstatus.textContent = "Перевод идёт автоматически.";
   }
 }
 
-async function startConversation() {
-  if (!currentSession) return;
+function markQrExpired() {
+  qrOverlay.classList.remove("hidden");
+}
 
-  startCallBtn.disabled = true;
-  homeView.classList.add("hidden");
-  callView.classList.remove("hidden");
-  clearErrorBanner(callBanner, "Запрашиваем микрофон, OpenAI Realtime и peer audio...");
+async function startConversation() {
+  if (!currentSession || openAiPc) return;
+
+  callStatus.textContent = "Подключение";
+  callSubstatus.textContent = "Запрашиваем микрофон и запускаем перевод.";
 
   try {
     await ensureMic();
@@ -173,11 +265,15 @@ async function startConversation() {
       token,
       micStream,
       onTrack: async (track, stream) => {
-        translatedTrack = track;
         await attachTranslatedTrack(stream, track);
       },
       onState: (state) => {
-        callStatus.textContent = state === "connected" ? "Active" : `OpenAI: ${state}`;
+        if (state === "connected") {
+          callStatus.textContent = "Разговор";
+          callSubstatus.textContent = "Перевод идёт автоматически.";
+        } else {
+          callSubstatus.textContent = `OpenAI: ${state}`;
+        }
       },
     });
 
@@ -188,8 +284,8 @@ async function startConversation() {
     }));
     startTimer();
   } catch (error) {
-    setErrorBanner(callBanner, error.message || "Не удалось подключиться.");
-    startCallBtn.disabled = false;
+    callStatus.textContent = "Ошибка";
+    callSubstatus.textContent = error.message || "Не удалось подключиться.";
   }
 }
 
@@ -203,23 +299,20 @@ async function ensurePeerConnection(isInitiator) {
   peerPc = new RTCPeerConnection();
 
   peerPc.addEventListener("icecandidate", ({ candidate }) => {
-    if (candidate) {
-      sendPeerSignal({ type: "ice", candidate });
-    }
+    if (candidate) sendPeerSignal({ type: "ice", candidate });
   });
 
   peerPc.addEventListener("track", (event) => {
     remoteAudio = attachRemoteAudio(event.streams[0] || event.track);
-    callStatus.textContent = "Active";
-    ws?.send(JSON.stringify({
-      type: "participant.state",
-      patch: { peerConnected: true },
-    }));
+    callStatus.textContent = "Разговор";
+    callSubstatus.textContent = "Собеседник подключён.";
+    ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
 
   peerPc.addEventListener("connectionstatechange", () => {
     if (peerPc.connectionState === "connected") {
-      callStatus.textContent = "Active";
+      callStatus.textContent = "Разговор";
+      callSubstatus.textContent = "Канал связи стабилен.";
     }
   });
 
@@ -233,20 +326,17 @@ async function ensurePeerConnection(isInitiator) {
 }
 
 async function attachTranslatedTrack(stream, track) {
-  if (!peerPc) {
-    await ensurePeerConnection(true);
-  }
-
+  if (!peerPc) await ensurePeerConnection(true);
   const existing = peerPc.getSenders().find((sender) => sender.track?.id === track.id);
-  if (!existing) {
-    peerPc.addTrack(track, stream);
-    if (peerPc.signalingState === "stable" && !makingOffer) {
-      makingOffer = true;
-      const offer = await peerPc.createOffer();
-      await peerPc.setLocalDescription(offer);
-      sendPeerSignal({ type: "offer", sdp: offer.sdp });
-      makingOffer = false;
-    }
+  if (existing) return;
+
+  peerPc.addTrack(track, stream);
+  if (peerPc.signalingState === "stable" && !makingOffer) {
+    makingOffer = true;
+    const offer = await peerPc.createOffer();
+    await peerPc.setLocalDescription(offer);
+    sendPeerSignal({ type: "offer", sdp: offer.sdp });
+    makingOffer = false;
   }
 }
 
@@ -284,13 +374,12 @@ function startTimer() {
 }
 
 function stopTimer() {
-  if (timerId) {
-    clearInterval(timerId);
-    timerId = null;
-  }
+  if (!timerId) return;
+  clearInterval(timerId);
+  timerId = null;
 }
 
-async function endConversation(reason) {
+async function endConversation(reason, options = {}) {
   if (currentSession) {
     await fetchJson("/api/session/end", {
       method: "POST",
@@ -298,7 +387,11 @@ async function endConversation(reason) {
     }).catch(() => {});
   }
   await teardownMedia();
-  showEndedState("Разговор завершён");
+  if (!options.silent) {
+    callStatus.textContent = "Разговор завершён";
+    callSubstatus.textContent = "Для нового разговора обновите QR-код.";
+    markQrExpired();
+  }
 }
 
 async function teardownMedia() {
@@ -313,10 +406,3 @@ async function teardownMedia() {
   remoteAudio?.remove();
   remoteAudio = null;
 }
-
-function showEndedState(message) {
-  callStatus.textContent = "Ended";
-  setErrorBanner(callBanner, message);
-}
-
-init();
