@@ -1,6 +1,6 @@
 export const MODEL_LABELS = {
-  mini: "gpt-realtime-mini",
-  full: "gpt-realtime",
+  mini: "gpt-4o-mini-realtime-preview",
+  full: "gpt-4o-realtime-preview",
 };
 
 export function languageHint() {
@@ -39,16 +39,6 @@ export async function fetchJson(url, options) {
   return payload;
 }
 
-export function setErrorBanner(element, message) {
-  element.textContent = message;
-  element.classList.add("error");
-}
-
-export function clearErrorBanner(element, message) {
-  element.textContent = message;
-  element.classList.remove("error");
-}
-
 export async function bootstrapRealtime({ sessionId, role, speakerLanguageHint }) {
   const payload = await fetchJson("/api/realtime/bootstrap", {
     method: "POST",
@@ -73,13 +63,21 @@ export async function connectOpenAiRealtime({ token, micStream, onTrack, onEvent
     }
   });
 
-  pc.addEventListener("connectionstatechange", () => onState?.(pc.connectionState));
-  pc.addEventListener("track", (event) => onTrack(event.track, event.streams[0]));
+  pc.addEventListener("connectionstatechange", () => {
+    console.log("OpenAI WebRTC state:", pc.connectionState);
+    onState?.(pc.connectionState);
+  });
+  pc.addEventListener("track", (event) => {
+    console.log("OpenAI track received:", event.track.kind);
+    onTrack(event.track, event.streams[0]);
+  });
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
-  const response = await fetch("https://api.openai.com/v1/realtime/calls", {
+  // OpenAI Realtime WebRTC endpoint
+  const model = "gpt-4o-realtime-preview";
+  const response = await fetch(`https://api.openai.com/v1/realtime?model=${model}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -89,7 +87,9 @@ export async function connectOpenAiRealtime({ token, micStream, onTrack, onEvent
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI call failed: ${response.status}`);
+    const errText = await response.text().catch(() => "");
+    console.error("OpenAI WebRTC error:", response.status, errText);
+    throw new Error(`OpenAI Realtime: ${response.status} ${errText.slice(0, 200)}`);
   }
 
   const answerSdp = await response.text();
@@ -103,6 +103,9 @@ export function attachRemoteAudio(trackOrStream) {
   audio.autoplay = true;
   audio.playsInline = true;
   audio.srcObject = trackOrStream instanceof MediaStream ? trackOrStream : new MediaStream([trackOrStream]);
-  audio.play().catch(() => {});
+  // Append to DOM — required on iOS Safari for audio playback
+  audio.style.display = "none";
+  document.body.appendChild(audio);
+  audio.play().catch((err) => console.warn("audio play blocked:", err));
   return audio;
 }

@@ -230,9 +230,10 @@ app.post("/api/realtime/bootstrap", async (req, res) => {
       startedAt: session.startedAt || new Date().toISOString(),
     });
 
+    const secret = bootstrap.client_secret || bootstrap;
     return res.json({
-      clientSecret: bootstrap.value,
-      expiresAt: bootstrap.expires_at,
+      clientSecret: secret.value || secret,
+      expiresAt: secret.expires_at,
       session: publicSessionView(sessionId),
     });
   } catch (error) {

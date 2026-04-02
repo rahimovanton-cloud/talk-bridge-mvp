@@ -1,8 +1,8 @@
 import type { TalkModelChoice } from "./types.js";
 
 const MODEL_MAP: Record<TalkModelChoice, string> = {
-  mini: "gpt-realtime-mini",
-  full: "gpt-realtime",
+  mini: "gpt-4o-mini-realtime-preview",
+  full: "gpt-4o-realtime-preview",
 };
 
 export function getOpenAiRealtimeModel(model: TalkModelChoice) {
@@ -29,35 +29,24 @@ export async function createRealtimeClientSecret(params: {
     "If audio is unclear, briefly ask for repetition in the listener's language.",
   ].join("\n");
 
-  const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+  const modelId = getOpenAiRealtimeModel(params.model);
+
+  const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${params.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      expires_after: {
-        anchor: "created_at",
-        seconds: 600,
-      },
-      session: {
-        type: "realtime",
-        model: getOpenAiRealtimeModel(params.model),
-        instructions,
-        audio: {
-          input: {
-            turn_detection: {
-              type: "server_vad",
-              create_response: true,
-              interrupt_response: true,
-              silence_duration_ms: 300,
-              prefix_padding_ms: 250,
-            },
-          },
-          output: {
-            voice: "marin",
-          },
-        },
+      model: modelId,
+      instructions,
+      voice: "ash",
+      input_audio_transcription: { model: "whisper-1" },
+      turn_detection: {
+        type: "server_vad",
+        silence_duration_ms: 400,
+        prefix_padding_ms: 300,
+        threshold: 0.5,
       },
     }),
   });
