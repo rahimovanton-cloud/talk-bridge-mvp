@@ -62,7 +62,7 @@ function setTab(index) {
   tabPanels.forEach((p, i) => p.classList.toggle("active", i === index));
 }
 
-/* ── swipe to end ── */
+/* ── swipe control ── */
 function initSwipe(railId, thumbId, onComplete) {
   const rail = document.getElementById(railId);
   const thumb = document.getElementById(thumbId);
@@ -83,24 +83,19 @@ function initSwipe(railId, thumbId, onComplete) {
     active = true;
     startX = e.touches[0].clientX - pos;
   }, { passive: false });
-  document.addEventListener("touchmove", (e) => {
-    if (!active) return;
-    paint(e.touches[0].clientX - startX);
-  }, { passive: true });
+  document.addEventListener("touchmove", (e) => { if (active) paint(e.touches[0].clientX - startX); }, { passive: true });
   document.addEventListener("touchend", async () => {
     if (!active) return;
     active = false;
-    if (pos >= maxX() * 0.75) { paint(maxX()); await onComplete(); }
-    else { paint(0); }
+    if (pos >= maxX() * 0.75) { paint(maxX()); await onComplete(); } else { paint(0); }
   });
 
   thumb.addEventListener("mousedown", (e) => { e.preventDefault(); active = true; startX = e.clientX - pos; });
-  document.addEventListener("mousemove", (e) => { if (!active) return; paint(e.clientX - startX); });
+  document.addEventListener("mousemove", (e) => { if (active) paint(e.clientX - startX); });
   document.addEventListener("mouseup", async () => {
     if (!active) return;
     active = false;
-    if (pos >= maxX() * 0.75) { paint(maxX()); await onComplete(); }
-    else { paint(0); }
+    if (pos >= maxX() * 0.75) { paint(maxX()); await onComplete(); } else { paint(0); }
   });
 
   paint(0);
@@ -122,8 +117,15 @@ function bindEvents() {
 
   copyInviteBtn.addEventListener("click", async () => {
     if (!inviteUrlInput.value) return;
-    await navigator.clipboard.writeText(inviteUrlInput.value);
-    contactHint.textContent = "Ссылка скопирована";
+    try {
+      await navigator.clipboard.writeText(inviteUrlInput.value);
+      contactHint.textContent = "Ссылка скопирована ✓";
+    } catch {
+      // fallback
+      inviteUrlInput.select();
+      document.execCommand("copy");
+      contactHint.textContent = "Ссылка скопирована ✓";
+    }
   });
 
   regenQrBtn.addEventListener("click", createSession);
@@ -165,11 +167,11 @@ async function createSession() {
     qrImage.classList.remove("hidden");
     qrPlaceholder.classList.add("hidden");
     inviteUrlInput.value = payload.inviteUrl;
-    contactHint.textContent = "Отсканируйте QR-код для разговора";
+    contactHint.textContent = `Активно · до ${new Date(currentSession.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 
     callStatus.textContent = "У вас пока нет текущей сессии";
     callTimer.classList.add("hidden");
-    callSubstatus.textContent = "Создайте QR-код и дождитесь ответа.";
+    callSubstatus.textContent = "Покажите QR-код собеседнику.";
     clientEndSwipe.classList.add("hidden");
 
     connectSocket();
@@ -189,6 +191,7 @@ function connectSocket() {
     sessionId: currentSession.id,
     role: "client",
     onMessage: async (msg) => {
+      console.log("ws msg:", msg.type, msg);
       if (msg.type === "session.updated") {
         currentSession = msg.session;
         renderSessionState();
@@ -227,12 +230,12 @@ function renderSessionState() {
   const mapping = {
     created: "Готово",
     qr_displayed: "QR показан",
-    opened: "Собеседник открыл ссылку",
+    opened: "Ссылка открыта",
     ringing: "Идёт вызов",
-    accepted: "Собеседник ответил",
-    connecting: "Соединяем перевод",
+    accepted: "Ответ получен",
+    connecting: "Соединение",
     active: "Разговор активен",
-    ended: "Разговор завершён",
+    ended: "Завершён",
     expired: "QR истёк",
     failed: "Ошибка",
   };
@@ -241,7 +244,7 @@ function renderSessionState() {
     ["Сессия", mapping[currentSession.status] || currentSession.status],
     ["Модель", MODEL_LABELS[currentSession.model]],
     ["Backend", backendStatus.textContent],
-    ["Собеседник", currentSession.receiverState.wsConnected ? "На линии" : "Ещё не подключён"],
+    ["Собеседник", currentSession.receiverState.wsConnected ? "На линии" : "Ожидание"],
     ["Язык", currentSession.receiverLanguageHint || currentSession.receiverState.languageHint || "Авто"],
   ];
 
@@ -249,11 +252,7 @@ function renderSessionState() {
     .map(([l, v]) => `<div class="tech-row"><span>${l}</span><strong>${v}</strong></div>`)
     .join("");
 
-  const expiresAt = new Date(currentSession.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  contactHint.textContent = currentSession.status === "active"
-    ? "Разговор идёт"
-    : `Отсканируйте QR-код · до ${expiresAt}`;
-
+  // Call screen states
   if (currentSession.status === "ringing") {
     callStatus.textContent = "Идёт вызов";
     callSubstatus.textContent = "Ждём ответ собеседника.";
@@ -266,7 +265,7 @@ function renderSessionState() {
   }
   if (currentSession.status === "connecting") {
     callStatus.textContent = "Подключение";
-    callSubstatus.textContent = "Настраиваем аудио и перевод.";
+    callSubstatus.textContent = "Настраиваем аудио.";
   }
   if (currentSession.status === "active") {
     callStatus.textContent = "Разговор";
@@ -287,21 +286,32 @@ async function startConversation() {
 
   try {
     await ensureMic();
+    callSubstatus.textContent = "Микрофон получен. Подключаем перевод.";
+
     await ensurePeerConnection(true);
+    callSubstatus.textContent = "Получаем ключ OpenAI.";
+
     const token = await bootstrapRealtime({
       sessionId: currentSession.id,
       role: "client",
       speakerLanguageHint: languageHint(),
     });
 
+    callSubstatus.textContent = "Подключаем OpenAI Realtime.";
+
     const realtime = await connectOpenAiRealtime({
       token,
       micStream,
       onTrack: async (track, stream) => { await attachTranslatedTrack(stream, track); },
       onState: (state) => {
+        console.log("openai state:", state);
         if (state === "connected") {
           callStatus.textContent = "Разговор";
-          callSubstatus.textContent = "Перевод идёт автоматически.";
+          callSubstatus.textContent = "Перевод активен.";
+          callTimer.classList.remove("hidden");
+          clientEndSwipe.classList.remove("hidden");
+        } else if (state === "failed") {
+          callSubstatus.textContent = "Ошибка соединения OpenAI.";
         } else {
           callSubstatus.textContent = `OpenAI: ${state}`;
         }
@@ -311,9 +321,14 @@ async function startConversation() {
     openAiPc = realtime.pc;
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
+    callStatus.textContent = "Разговор";
+    callSubstatus.textContent = "Перевод идёт.";
+    callTimer.classList.remove("hidden");
+    clientEndSwipe.classList.remove("hidden");
   } catch (error) {
     callStatus.textContent = "Ошибка";
     callSubstatus.textContent = error.message || "Не удалось подключиться.";
+    console.error("startConversation error:", error);
   }
 }
 
@@ -335,6 +350,7 @@ async function ensurePeerConnection(isInitiator) {
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
   peerPc.addEventListener("connectionstatechange", () => {
+    console.log("peer state:", peerPc.connectionState);
     if (peerPc.connectionState === "connected") {
       callStatus.textContent = "Разговор";
       callSubstatus.textContent = "Канал связи стабилен.";

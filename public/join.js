@@ -30,6 +30,21 @@ let ringerCtx = null;
 let ringerTimer = null;
 let answered = false;
 
+/* ── Audio context needs user gesture on iOS ── */
+let audioUnlocked = false;
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  try {
+    ringerCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ringerCtx.state === "suspended") ringerCtx.resume();
+  } catch { /* no audio support */ }
+}
+
+// Unlock on any first touch/click
+document.addEventListener("touchstart", unlockAudio, { once: true });
+document.addEventListener("click", unlockAudio, { once: true });
+
 init();
 
 async function init() {
@@ -54,7 +69,7 @@ function renderInvite() {
   }
 }
 
-/* ── swipe helper (touch-based, left→right) ── */
+/* ── swipe (touch + mouse) ── */
 function initSwipe(railId, thumbId, onComplete) {
   const rail = document.getElementById(railId);
   const thumb = document.getElementById(thumbId);
@@ -63,73 +78,43 @@ function initSwipe(railId, thumbId, onComplete) {
   let startX = 0;
   let pos = 0;
 
-  function maxX() {
-    return rail.clientWidth - thumb.clientWidth - 12;
-  }
+  function maxX() { return rail.clientWidth - thumb.clientWidth - 12; }
   function paint(x) {
     pos = Math.max(0, Math.min(maxX(), x));
     thumb.style.transform = `translateX(${pos}px)`;
     fill.style.width = `${pos + thumb.clientWidth}px`;
   }
 
-  // Touch events (most reliable on mobile)
   thumb.addEventListener("touchstart", (e) => {
     e.preventDefault();
     active = true;
     startX = e.touches[0].clientX - pos;
   }, { passive: false });
-
-  document.addEventListener("touchmove", (e) => {
-    if (!active) return;
-    paint(e.touches[0].clientX - startX);
-  }, { passive: true });
-
+  document.addEventListener("touchmove", (e) => { if (active) paint(e.touches[0].clientX - startX); }, { passive: true });
   document.addEventListener("touchend", async () => {
     if (!active) return;
     active = false;
-    if (pos >= maxX() * 0.75) {
-      paint(maxX());
-      await onComplete();
-    } else {
-      paint(0);
-    }
+    if (pos >= maxX() * 0.75) { paint(maxX()); await onComplete(); } else { paint(0); }
   });
 
-  // Mouse fallback for desktop
-  thumb.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    active = true;
-    startX = e.clientX - pos;
-  });
-  document.addEventListener("mousemove", (e) => {
-    if (!active) return;
-    paint(e.clientX - startX);
-  });
+  thumb.addEventListener("mousedown", (e) => { e.preventDefault(); active = true; startX = e.clientX - pos; });
+  document.addEventListener("mousemove", (e) => { if (active) paint(e.clientX - startX); });
   document.addEventListener("mouseup", async () => {
     if (!active) return;
     active = false;
-    if (pos >= maxX() * 0.75) {
-      paint(maxX());
-      await onComplete();
-    } else {
-      paint(0);
-    }
+    if (pos >= maxX() * 0.75) { paint(maxX()); await onComplete(); } else { paint(0); }
   });
 
   paint(0);
 }
 
-/* ── ringing: shake + sound ── */
+/* ── ringing ── */
 function startRinging() {
   incomingInfo.classList.add("shaking");
 
-  try {
-    ringerCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (ringerCtx.state === "suspended") ringerCtx.resume();
-  } catch { /* no audio */ }
-
   function burst() {
-    if (answered || !ringerCtx) return;
+    if (answered || !ringerCtx || ringerCtx.state === "closed") return;
+    if (ringerCtx.state === "suspended") ringerCtx.resume();
     const t = ringerCtx.currentTime;
     [0, 0.15].forEach((off) => {
       const o = ringerCtx.createOscillator();
@@ -188,6 +173,17 @@ function connectSocket() {
   });
 }
 
+/* ── view switching ── */
+function showIncoming() {
+  incomingView.style.display = "flex";
+  receiverCallView.style.display = "none";
+}
+
+function showCallView() {
+  incomingView.style.display = "none";
+  receiverCallView.style.display = "flex";
+}
+
 /* ── accept call ── */
 async function acceptCall() {
   if (answered) return;
@@ -203,8 +199,7 @@ async function acceptCall() {
       }),
     });
 
-    incomingView.classList.add("hidden");
-    receiverCallView.classList.remove("hidden");
+    showCallView();
     receiverCallStatus.textContent = "Подключение";
     receiverBanner.textContent = "Запускаем перевод.";
 
@@ -229,11 +224,13 @@ async function acceptCall() {
     openAiPc = realtime.pc;
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
+    receiverCallStatus.textContent = "Разговор";
+    receiverBanner.textContent = "Перевод активен.";
   } catch (error) {
     answered = false;
-    incomingView.classList.remove("hidden");
-    receiverCallView.classList.add("hidden");
+    showIncoming();
     document.querySelector(".incoming-copy").textContent = error.message || "Не удалось подключиться.";
+    console.error("acceptCall error:", error);
   }
 }
 
@@ -286,13 +283,8 @@ async function handlePeerSignal(p) {
     sendPeerSignal({ type: "answer", sdp: answer.sdp });
     return;
   }
-  if (p.type === "answer") {
-    await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp });
-    return;
-  }
-  if (p.type === "ice" && p.candidate) {
-    await peerPc.addIceCandidate(p.candidate);
-  }
+  if (p.type === "answer") { await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp }); return; }
+  if (p.type === "ice" && p.candidate) { await peerPc.addIceCandidate(p.candidate); }
 }
 
 function sendPeerSignal(payload) {
@@ -329,10 +321,7 @@ async function teardownMedia() {
   [peerPc, openAiPc].forEach((pc) => pc?.close());
   peerPc = null;
   openAiPc = null;
-  if (micStream) {
-    micStream.getTracks().forEach((t) => t.stop());
-    micStream = null;
-  }
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
   remoteAudio?.remove();
   remoteAudio = null;
 }

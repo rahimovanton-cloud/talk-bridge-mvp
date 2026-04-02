@@ -23,9 +23,7 @@ button { border: 0; cursor: pointer; }
    RECEIVER (собеседник) — fullscreen photo bg
    ============================================ */
 
-.receiver-body {
-  background: #000;
-}
+.receiver-body { background: #000; }
 
 .receiver-bg {
   position: fixed;
@@ -55,18 +53,15 @@ button { border: 0; cursor: pointer; }
   position: fixed;
   inset: 0;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
 }
 
+/* Use inline display style for switching, no .active/.hidden conflict */
 .receiver-view {
-  display: none;
+  display: flex;
   flex-direction: column;
   height: 100%;
-}
-
-.receiver-view.active {
-  display: flex;
+  position: absolute;
+  inset: 0;
 }
 
 .rv-top { flex: 1; }
@@ -91,7 +86,7 @@ button { border: 0; cursor: pointer; }
 }
 
 .rv-bottom {
-  padding: 0 20px 36px;
+  padding: 0 20px 40px;
 }
 
 .rv-center {
@@ -102,6 +97,21 @@ button { border: 0; cursor: pointer; }
   text-align: center;
   gap: 12px;
   padding: 0 24px;
+}
+
+.rv-status {
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+}
+
+.rv-timer {
+  font-family: var(--display);
+  font-size: clamp(56px, 16vw, 100px);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+  text-shadow: 0 4px 30px rgba(0,0,0,0.4);
 }
 
 .rv-substatus {
@@ -133,7 +143,7 @@ button { border: 0; cursor: pointer; }
   width: 100%;
   height: 72px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.12);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -147,15 +157,14 @@ button { border: 0; cursor: pointer; }
   left: 4px;
   width: 64px;
   border-radius: 999px;
+  background: rgba(255,255,255,0.08);
   transition: width 0.05s linear;
 }
 
-.answer-color ~ .swipe-rail-fill,
 .swipe-rail:has(.answer-color) .swipe-rail-fill {
   background: rgba(50, 212, 111, 0.4);
 }
 
-.end-color ~ .swipe-rail-fill,
 .swipe-rail:has(.end-color) .swipe-rail-fill {
   background: rgba(255, 69, 58, 0.4);
 }
@@ -189,7 +198,7 @@ button { border: 0; cursor: pointer; }
 .end-color { background: var(--red); }
 
 /* ============================================
-   CLIENT — tab-based layout, no scroll
+   CLIENT — tab-based, no scroll
    ============================================ */
 
 .client-body {
@@ -249,14 +258,14 @@ button { border: 0; cursor: pointer; }
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 16px 20px 20px;
-  gap: 12px;
+  padding: 12px 16px 16px;
+  gap: 8px;
 }
 
 .qr-title {
   font-family: var(--display);
-  font-size: clamp(22px, 6vw, 36px);
-  line-height: 1.0;
+  font-size: clamp(20px, 5vw, 32px);
+  line-height: 1.05;
   letter-spacing: -0.04em;
   flex-shrink: 0;
 }
@@ -266,17 +275,17 @@ button { border: 0; cursor: pointer; }
   position: relative;
   display: grid;
   place-items: center;
-  border-radius: 24px;
+  border-radius: 20px;
   background: #f6f7f8;
   min-height: 0;
-  padding: 12px;
+  padding: 10px;
 }
 
 .qr-image {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  border-radius: 16px;
+  border-radius: 14px;
 }
 
 .qr-placeholder {
@@ -287,8 +296,8 @@ button { border: 0; cursor: pointer; }
 
 .qr-overlay {
   position: absolute;
-  inset: 12px;
-  border-radius: 16px;
+  inset: 10px;
+  border-radius: 14px;
   background: rgba(8, 11, 16, 0.75);
   display: grid;
   place-items: center;
@@ -302,10 +311,17 @@ button { border: 0; cursor: pointer; }
   font-weight: 600;
 }
 
+.qr-footer {
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .qr-hint {
   text-align: center;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 
@@ -340,67 +356,51 @@ button { border: 0; cursor: pointer; }
   line-height: 1.4;
 }
 
-.call-actions {
+.call-bottom-area {
   width: 100%;
   margin-top: auto;
-}
-
-/* talk-status/talk-timer reused in receiver */
-.talk-status {
-  font-size: clamp(28px, 7vw, 42px);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  text-shadow: 0 2px 20px rgba(0,0,0,0.5);
-}
-
-.talk-timer {
-  font-family: var(--display);
-  font-size: clamp(56px, 16vw, 100px);
-  line-height: 0.95;
-  letter-spacing: -0.06em;
+  padding-top: 16px;
 }
 
 /* ── Tech / Settings screen ── */
 .tech-screen {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 16px 24px;
-  height: 100%;
-  overflow-y: auto;
+  gap: 12px;
+  padding: 12px 14px 24px;
 }
 
 .tech-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 20px;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 18px;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.06);
 }
 
 .tech-label {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .tech-meta {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .model-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 4px;
   background: rgba(255,255,255,0.04);
   padding: 4px;
   border-radius: 999px;
 }
 
 .model-toggle button {
-  height: 44px;
+  height: 40px;
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
@@ -415,51 +415,51 @@ button { border: 0; cursor: pointer; }
 .tech-pill {
   display: inline-flex;
   width: fit-content;
-  height: 36px;
+  height: 32px;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 10px;
   border-radius: 999px;
   background: rgba(255,255,255,0.06);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .tech-grid {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .tech-row {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  padding: 8px 10px;
+  border-radius: 12px;
   background: rgba(255,255,255,0.04);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .tech-row strong { color: white; }
 
 .tech-input {
   width: 100%;
-  height: 44px;
-  border-radius: 14px;
+  height: 40px;
+  border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.08);
   background: rgba(255,255,255,0.04);
   color: white;
-  padding: 0 12px;
-  font-size: 13px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 .pill-btn {
-  height: 48px;
+  height: 44px;
   border-radius: 999px;
   background: rgba(255,255,255,0.09);
   color: white;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   border: 1px solid rgba(255,255,255,0.08);
   width: 100%;
