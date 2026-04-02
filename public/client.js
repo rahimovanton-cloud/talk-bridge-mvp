@@ -1,5 +1,6 @@
 import {
   MODEL_LABELS,
+  PEER_ICE_CONFIG,
   attachRemoteAudio,
   bootstrapRealtime,
   connectOpenAiRealtime,
@@ -343,7 +344,7 @@ async function ensureMic() {
 
 async function ensurePeerConnection(isInitiator) {
   if (peerPc) return;
-  peerPc = new RTCPeerConnection();
+  peerPc = new RTCPeerConnection(PEER_ICE_CONFIG);
   peerPc.addEventListener("icecandidate", ({ candidate }) => {
     if (candidate) sendPeerSignal({ type: "ice", candidate });
   });
@@ -353,8 +354,11 @@ async function ensurePeerConnection(isInitiator) {
     callSubstatus.textContent = "Собеседник подключён.";
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
   });
+  peerPc.addEventListener("iceconnectionstatechange", () => {
+    console.log("CLIENT ICE connection:", peerPc.iceConnectionState);
+  });
   peerPc.addEventListener("connectionstatechange", () => {
-    console.log("peer state:", peerPc.connectionState);
+    console.log("CLIENT peer connection:", peerPc.connectionState);
     if (peerPc.connectionState === "connected") {
       callStatus.textContent = "Разговор";
       callSubstatus.textContent = "Канал связи стабилен.";

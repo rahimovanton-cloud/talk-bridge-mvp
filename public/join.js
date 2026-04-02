@@ -1,4 +1,5 @@
 import {
+  PEER_ICE_CONFIG,
   attachRemoteAudio,
   bootstrapRealtime,
   connectOpenAiRealtime,
@@ -251,15 +252,22 @@ async function ensureMic() {
 
 async function ensurePeerConnection(isInitiator) {
   if (peerPc) return;
-  peerPc = new RTCPeerConnection();
+  peerPc = new RTCPeerConnection(PEER_ICE_CONFIG);
   peerPc.addEventListener("icecandidate", ({ candidate }) => {
     if (candidate) sendPeerSignal({ type: "ice", candidate });
   });
   peerPc.addEventListener("track", (event) => {
+    console.log("RECEIVER: got peer track", event.track.kind, event.track.id);
     remoteAudio = attachRemoteAudio(event.streams[0] || event.track);
     receiverCallStatus.textContent = "Разговор";
     receiverBanner.textContent = "Собеседник на линии.";
     ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
+  });
+  peerPc.addEventListener("connectionstatechange", () => {
+    console.log("RECEIVER peer connection:", peerPc.connectionState);
+  });
+  peerPc.addEventListener("iceconnectionstatechange", () => {
+    console.log("RECEIVER ICE connection:", peerPc.iceConnectionState);
   });
   if (isInitiator) {
     makingOffer = true;
