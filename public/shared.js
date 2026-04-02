@@ -84,19 +84,9 @@ export async function connectOpenAiRealtime({ token, model, micStream, onTrack, 
   });
   pc.addEventListener("track", (event) => {
     console.log("OpenAI track received:", event.track.kind);
-    // Silence this track locally — route through AudioContext with gain=0
-    // so the browser doesn't auto-play it. The track itself stays live
-    // and will be sent to the peer connection for the other party to hear.
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ctx.createMediaStreamSource(new MediaStream([event.track]));
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      src.connect(gain).connect(ctx.destination);
-    } catch (e) {
-      console.warn("Could not mute OpenAI track locally:", e);
-    }
-    // Pass track to caller — it will be added to peer connection
+    // Do NOT attach to any audio element or AudioContext — that would
+    // either auto-play locally or consume the track. Just pass it
+    // straight to the peer connection for the other party to hear.
     onTrack(event.track, event.streams[0]);
   });
 

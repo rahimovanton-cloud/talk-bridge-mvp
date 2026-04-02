@@ -238,10 +238,16 @@ async function acceptCall() {
     receiverCallStatus.textContent = "Разговор";
     receiverBanner.textContent = "Перевод активен.";
   } catch (error) {
-    answered = false;
-    showIncoming();
-    document.querySelector(".incoming-copy").textContent = error.message || "Не удалось подключиться.";
     console.error("acceptCall error:", error);
+    // If we already showed the call view, stay on it and show error there
+    if (receiverCallView.style.display !== "none") {
+      receiverCallStatus.textContent = "Ошибка";
+      receiverBanner.textContent = error.message || "Не удалось подключиться.";
+    } else {
+      answered = false;
+      showIncoming();
+      document.querySelector(".incoming-copy").textContent = error.message || "Не удалось подключиться.";
+    }
   }
 }
 
@@ -279,17 +285,22 @@ async function ensurePeerConnection(isInitiator) {
 }
 
 async function attachTranslatedTrack(stream, track) {
-  if (!peerPc) await ensurePeerConnection(false);
-  const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
-  if (existing) return;
-  console.log("RECEIVER: adding translated track to peer connection", track.kind, track.id);
-  peerPc.addTrack(track, stream);
-  if (!makingOffer) {
-    makingOffer = true;
-    const offer = await peerPc.createOffer();
-    await peerPc.setLocalDescription(offer);
-    sendPeerSignal({ type: "offer", sdp: offer.sdp });
-    console.log("RECEIVER: sent offer with translated track");
+  try {
+    if (!peerPc) await ensurePeerConnection(false);
+    const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
+    if (existing) return;
+    console.log("RECEIVER: adding translated track to peer connection", track.kind, track.id);
+    peerPc.addTrack(track, stream);
+    if (!makingOffer) {
+      makingOffer = true;
+      const offer = await peerPc.createOffer();
+      await peerPc.setLocalDescription(offer);
+      sendPeerSignal({ type: "offer", sdp: offer.sdp });
+      console.log("RECEIVER: sent offer with translated track");
+      makingOffer = false;
+    }
+  } catch (e) {
+    console.error("RECEIVER: attachTranslatedTrack error:", e);
     makingOffer = false;
   }
 }
