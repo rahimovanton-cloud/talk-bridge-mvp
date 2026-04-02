@@ -69,13 +69,6 @@ export async function connectOpenAiRealtime({ token, model, micStream, onTrack, 
     pc.addTrack(audioTrack, micStream);
   }
 
-  // Mute sink — prevents iOS Safari from auto-playing OpenAI audio locally.
-  // The translated track must go ONLY to the other party via peer connection.
-  const muteSink = document.createElement("audio");
-  muteSink.muted = true;
-  muteSink.style.display = "none";
-  document.body.appendChild(muteSink);
-
   const dc = pc.createDataChannel("oai-events");
   dc.addEventListener("message", (event) => {
     try {
@@ -91,9 +84,19 @@ export async function connectOpenAiRealtime({ token, model, micStream, onTrack, 
   });
   pc.addEventListener("track", (event) => {
     console.log("OpenAI track received:", event.track.kind);
-    // Attach to muted element to claim the track (prevents auto-play on iOS)
-    muteSink.srcObject = new MediaStream([event.track]);
-    // Pass track to caller — it will be routed to peer connection, NOT played locally
+    // Silence this track locally — route through AudioContext with gain=0
+    // so the browser doesn't auto-play it. The track itself stays live
+    // and will be sent to the peer connection for the other party to hear.
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(new MediaStream([event.track]));
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(gain).connect(ctx.destination);
+    } catch (e) {
+      console.warn("Could not mute OpenAI track locally:", e);
+    }
+    // Pass track to caller — it will be added to peer connection
     onTrack(event.track, event.streams[0]);
   });
 

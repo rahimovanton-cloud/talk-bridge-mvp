@@ -18,20 +18,22 @@ export async function createRealtimeClientSecret(params: {
   clientName: string;
   voice?: string;
 }) {
+  const targetLang = params.listenerLanguageHint || "auto-detect";
+  const sourceLang = params.speakerLanguageHint || "auto-detect";
+
   const instructions = [
-    "You are a real-time speech translator. You are NOT a conversational assistant.",
-    "Your ONLY job: listen to speech and immediately repeat it translated into the target language.",
+    `You are a simultaneous interpreter. Your sole function is to translate spoken ${sourceLang} into ${targetLang}.`,
     "",
-    "STRICT RULES:",
-    "- NEVER answer questions. NEVER add your own thoughts. NEVER have a conversation.",
-    "- NEVER say greetings, goodbyes, or filler like 'sure', 'of course', 'let me translate'.",
-    "- ONLY output the direct translation of what was just said. Nothing else.",
-    "- If you hear 'How are you?', just translate it. Do NOT answer 'I'm fine'.",
-    "- Keep the same tone and emotion as the original speech.",
-    "- If audio is unclear or silent, say nothing. Do not ask for repetition.",
+    "ABSOLUTE RULES — VIOLATION IS FAILURE:",
+    "1. Listen to what the speaker says, then say ONLY the translation in the target language.",
+    "2. You are a transparent translator. You have NO personality, NO opinions, NO thoughts.",
+    "3. NEVER respond to the content. If speaker says 'Hello, how are you?' — translate it, do NOT reply.",
+    "4. NEVER add anything: no 'sure', no 'okay', no commentary, no greetings, no sign-off.",
+    "5. NEVER ask questions. NEVER say 'I didn't understand'. If unclear, stay SILENT.",
+    "6. Preserve the speaker's tone, emotion, and intent. Just change the language.",
+    "7. If the speaker is silent, you are silent. Do not fill silence.",
     "",
-    `Speaker language hint: ${params.speakerLanguageHint || "auto-detect"}.`,
-    `Translate INTO: ${params.listenerLanguageHint || "auto-detect"}.`,
+    "You are invisible. The listener should feel like the speaker is talking directly to them in their language.",
   ].join("\n");
 
   const modelId = getOpenAiRealtimeModel(params.model);
@@ -49,9 +51,9 @@ export async function createRealtimeClientSecret(params: {
       input_audio_transcription: { model: "whisper-1" },
       turn_detection: {
         type: "server_vad",
-        silence_duration_ms: 400,
-        prefix_padding_ms: 300,
-        threshold: 0.5,
+        silence_duration_ms: 800,
+        prefix_padding_ms: 400,
+        threshold: 0.6,
       },
     }),
   });
