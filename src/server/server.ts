@@ -75,6 +75,8 @@ function publicSessionView(sessionId: string) {
     clientPhotoUrl: session.clientPhotoUrl,
     clientLanguageHint: session.clientLanguageHint,
     receiverLanguageHint: session.receiverLanguageHint,
+    clientVoice: session.clientVoice,
+    receiverVoice: session.receiverVoice,
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     endReason: session.endReason,
@@ -94,6 +96,49 @@ function updateStatus(sessionId: string, status: SessionStatus, extra?: Record<s
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "talk-bridge-mvp", now: new Date().toISOString() });
+});
+
+// Voice preview via OpenAI TTS — cached in memory
+const voicePreviewCache = new Map<string, Buffer>();
+const VALID_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"];
+
+app.get("/api/voice/preview", async (req, res) => {
+  const voice = String(req.query.voice || "").toLowerCase();
+  if (!VALID_VOICES.includes(voice)) {
+    return res.status(400).json({ error: "invalid_voice" });
+  }
+
+  const cached = voicePreviewCache.get(voice);
+  if (cached) {
+    res.set({ "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=86400" });
+    return res.send(cached);
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "no_api_key" });
+
+  try {
+    const ttsResp = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "tts-1",
+        voice,
+        input: "Hello, I am your translator. Привет, я ваш переводчик.",
+        response_format: "mp3",
+      }),
+    });
+    if (!ttsResp.ok) {
+      const err = await ttsResp.text();
+      return res.status(502).json({ error: "tts_failed", detail: err.slice(0, 200) });
+    }
+    const buf = Buffer.from(await ttsResp.arrayBuffer());
+    voicePreviewCache.set(voice, buf);
+    res.set({ "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=86400" });
+    return res.send(buf);
+  } catch (e) {
+    return res.status(502).json({ error: "tts_error" });
+  }
 });
 
 app.get("/join/:inviteToken", (_req, res) => {
@@ -126,6 +171,8 @@ app.post("/api/session/create", async (req, res) => {
     clientName: body.clientName?.trim() || defaultClientName,
     clientPhotoUrl: body.clientPhotoUrl?.trim() || defaultClientPhotoUrl,
     clientLanguageHint: body.clientLanguageHint?.trim() || defaultLanguageHint,
+    clientVoice: body.clientVoice?.trim() || undefined,
+    receiverVoice: body.receiverVoice?.trim() || undefined,
   });
 
   updateStatus(session.id, "qr_displayed");
@@ -212,6 +259,11 @@ app.post("/api/realtime/bootstrap", async (req, res) => {
   const listenerHint = role === "client" ? (session.receiverLanguageHint || session.receiverState.languageHint) : (session.clientLanguageHint || session.clientState.languageHint);
 
   try {
+    // Voice: this session translates the speaker's words for the listener.
+    // Client's session → listener is receiver → use clientVoice (voice receiver will hear)
+    // Receiver's session → listener is client → use receiverVoice (voice client will hear)
+    const voice = role === "client" ? session.clientVoice : session.receiverVoice;
+
     const bootstrap = await createRealtimeClientSecret({
       apiKey,
       model: session.model,
@@ -219,6 +271,7 @@ app.post("/api/realtime/bootstrap", async (req, res) => {
       speakerLanguageHint: speakerHint,
       listenerLanguageHint: listenerHint,
       clientName: session.clientName,
+      voice,
     });
 
     store.markParticipant(sessionId, role, {

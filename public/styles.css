@@ -490,6 +490,64 @@ button { border: 0; cursor: pointer; }
   width: 100%;
 }
 
+/* ── Voice list ── */
+.voice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.voice-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 6px 0 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.voice-item.active {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.2);
+  color: white;
+}
+
+.voice-item-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.voice-item-tag {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.voice-preview-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.voice-preview-btn.playing {
+  background: rgba(50, 212, 111, 0.3);
+  color: var(--green);
+}
+
 .pill-btn.ghost {
   background: transparent;
   border: 1px solid rgba(255,255,255,0.1);

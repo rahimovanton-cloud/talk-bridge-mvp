@@ -16,6 +16,7 @@ export async function createRealtimeClientSecret(params: {
   speakerLanguageHint?: string;
   listenerLanguageHint?: string;
   clientName: string;
+  voice?: string;
 }) {
   const instructions = [
     "You are a real-time speech translator. You are NOT a conversational assistant.",
@@ -44,7 +45,7 @@ export async function createRealtimeClientSecret(params: {
     body: JSON.stringify({
       model: modelId,
       instructions,
-      voice: "ash",
+      voice: params.voice || "ash",
       input_audio_transcription: { model: "whisper-1" },
       turn_detection: {
         type: "server_vad",

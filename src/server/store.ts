@@ -35,6 +35,8 @@ export class SessionStore {
     clientName: string;
     clientPhotoUrl?: string;
     clientLanguageHint?: string;
+    clientVoice?: string;
+    receiverVoice?: string;
   }) {
     const id = crypto.randomUUID();
     const inviteToken = crypto.randomBytes(18).toString("base64url");
@@ -56,6 +58,8 @@ export class SessionStore {
       clientName: params.clientName,
       clientPhotoUrl: params.clientPhotoUrl,
       clientLanguageHint: params.clientLanguageHint,
+      clientVoice: params.clientVoice || "ash",
+      receiverVoice: params.receiverVoice || "shimmer",
       inviteToken,
       inviteUrl,
       qrDataUrl,

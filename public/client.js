@@ -27,8 +27,23 @@ const callStatus = document.getElementById("callStatus");
 const callSubstatus = document.getElementById("callSubstatus");
 const callTimer = document.getElementById("callTimer");
 const clientEndSwipe = document.getElementById("clientEndSwipe");
+const clientVoiceList = document.getElementById("clientVoiceList");
+const receiverVoiceList = document.getElementById("receiverVoiceList");
+
+const VOICES = [
+  { id: "ash", label: "Ash", tag: "male" },
+  { id: "echo", label: "Echo", tag: "male" },
+  { id: "ballad", label: "Ballad", tag: "male" },
+  { id: "verse", label: "Verse", tag: "male" },
+  { id: "shimmer", label: "Shimmer", tag: "female" },
+  { id: "coral", label: "Coral", tag: "female" },
+  { id: "alloy", label: "Alloy", tag: "neutral" },
+  { id: "sage", label: "Sage", tag: "neutral" },
+];
 
 let selectedModel = "mini";
+let selectedClientVoice = "ash";
+let selectedReceiverVoice = "shimmer";
 let currentSession = null;
 let ws = null;
 let peerPc = null;
@@ -44,6 +59,7 @@ init();
 async function init() {
   await checkBackend();
   renderModel();
+  renderVoices();
   bindEvents();
   await createSession();
 }
@@ -141,6 +157,58 @@ function renderModel() {
   modelMeta.textContent = `${selectedModel === "mini" ? "Mini" : "Full"} · ${MODEL_LABELS[selectedModel]}`;
 }
 
+/* ── voice selection ── */
+let previewAudio = null;
+
+function renderVoices() {
+  renderVoiceList(clientVoiceList, selectedClientVoice, (v) => { selectedClientVoice = v; renderVoices(); });
+  renderVoiceList(receiverVoiceList, selectedReceiverVoice, (v) => { selectedReceiverVoice = v; renderVoices(); });
+}
+
+function renderVoiceList(container, selected, onSelect) {
+  container.innerHTML = VOICES.map((v) => `
+    <div class="voice-item${v.id === selected ? " active" : ""}" data-voice="${v.id}">
+      <span class="voice-item-name">${v.label}</span>
+      <span class="voice-item-tag">${v.tag}</span>
+      <button type="button" class="voice-preview-btn" data-preview="${v.id}">&#9654;</button>
+    </div>
+  `).join("");
+
+  container.querySelectorAll(".voice-item").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".voice-preview-btn")) return;
+      onSelect(el.dataset.voice);
+    });
+  });
+
+  container.querySelectorAll(".voice-preview-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      playVoicePreview(btn.dataset.preview, btn);
+    });
+  });
+}
+
+async function playVoicePreview(voice, btn) {
+  if (previewAudio) { previewAudio.pause(); previewAudio = null; }
+  document.querySelectorAll(".voice-preview-btn.playing").forEach((b) => b.classList.remove("playing"));
+
+  btn.classList.add("playing");
+  btn.textContent = "...";
+  try {
+    const resp = await fetch(`/api/voice/preview?voice=${voice}`);
+    if (!resp.ok) throw new Error("preview failed");
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    previewAudio = new Audio(url);
+    previewAudio.addEventListener("ended", () => { btn.classList.remove("playing"); btn.innerHTML = "&#9654;"; });
+    await previewAudio.play();
+  } catch {
+    btn.classList.remove("playing");
+  }
+  btn.innerHTML = "&#9654;";
+}
+
 async function createSession() {
   qrOverlay.classList.add("hidden");
   qrPlaceholder.textContent = "Генерируем QR-код...";
@@ -159,6 +227,8 @@ async function createSession() {
         clientName: "Anton",
         clientPhotoUrl: "/assets/client-photo.jpg",
         clientLanguageHint: languageHint(),
+        clientVoice: selectedClientVoice,
+        receiverVoice: selectedReceiverVoice,
       }),
     });
 

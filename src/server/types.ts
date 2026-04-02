@@ -35,6 +35,8 @@ export interface ConversationSession {
   clientPhotoUrl?: string;
   clientLanguageHint?: string;
   receiverLanguageHint?: string;
+  clientVoice?: string;
+  receiverVoice?: string;
   inviteToken: string;
   inviteUrl: string;
   qrDataUrl?: string;
@@ -50,4 +52,6 @@ export interface SessionCreateRequest {
   clientName?: string;
   clientPhotoUrl?: string;
   clientLanguageHint?: string;
+  clientVoice?: string;
+  receiverVoice?: string;
 }
