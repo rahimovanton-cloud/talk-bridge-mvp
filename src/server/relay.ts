@@ -231,7 +231,9 @@ export async function createRelay(
       }
       try {
         // Decode Opus → PCM 48kHz → resample to 24kHz
-        const decoded = decoder.decode(rtp.payload);
+        // Ensure payload is a proper Buffer (werift gives Uint8Array)
+        const payloadBuf = Buffer.isBuffer(rtp.payload) ? rtp.payload : Buffer.from(rtp.payload);
+        const decoded = decoder.decode(payloadBuf);
         if (!decoded || decoded.length === 0) {
           roleStats.decodeEmpty++;
           if (roleStats.decodeEmpty % 50 === 0) {
@@ -241,6 +243,12 @@ export async function createRelay(
         }
 
         const pcm48 = new Int16Array(decoded.buffer, decoded.byteOffset, decoded.byteLength / 2);
+
+        // Log first decoded frame in detail
+        if (roleStats.rtpReceived <= 3) {
+          const first10 = Array.from(pcm48.slice(0, 10));
+          logEvent(`relay [${sessionId}/${role}] decode frame #${roleStats.rtpReceived}: payloadSize=${payloadBuf.length}, decodedBytes=${decoded.byteLength}, samples=${pcm48.length}, first10=${JSON.stringify(first10)}`);
+        }
 
         // Track translated audio max amplitude
         let maxAmpTranslated = 0;
@@ -361,10 +369,13 @@ export function feedAudio(sessionId: string, role: SessionRole, pcmChunk: Buffer
       const pcm48 = resamplePcm16(pcm24, PCM_INPUT_RATE, OPUS_SAMPLE_RATE);
 
       // Encode to Opus
-      const opusFrame = relay.encoder.encode(
-        Buffer.from(pcm48.buffer, pcm48.byteOffset, pcm48.byteLength),
-        OPUS_FRAME_SIZE,
-      );
+      const pcm48Buf = Buffer.from(pcm48.buffer, pcm48.byteOffset, pcm48.byteLength);
+      const opusFrame = relay.encoder.encode(pcm48Buf, OPUS_FRAME_SIZE);
+
+      // Log first encode
+      if (roleStats.opusFramesSent < 3) {
+        logEvent(`relay [${sessionId}/${role}] encode frame #${roleStats.opusFramesSent}: pcm48samples=${pcm48.length}, pcm48bytes=${pcm48Buf.length}, opusBytes=${opusFrame.length}, maxAmp=${maxAmp}`);
+      }
 
       // Wrap in RTP
       const header = new RtpHeader();

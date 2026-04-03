@@ -60,8 +60,33 @@
 
 ---
 
-### (текущий) — диагностика: сохранение relay stats, уровень громкости, event log
+### `388a35f` — feat: preserve relay stats, audio level tracking, event log
 
-**Суть:** Relay stats уничтожались при завершении звонка. Добавлено: сохранение после destroy, отслеживание max amplitude (чтобы понять тишина ли это), серверный event log.
+**Суть:** Relay stats уничтожались при завершении звонка. Добавлено: сохранение после destroy, отслеживание max amplitude, серверный event log.
 
-**Ожидаемый результат:** После следующего звонка relay stats будут доступны с данными об уровне громкости — сразу видно, приходит ли от OpenAI реальное аудио или нули.
+**Изменённые файлы:**
+| Файл | Что изменилось |
+|------|----------------|
+| `src/server/relay.ts` | feedMaxAmplitude, translatedMaxAmplitude, onTrackFired, firstRtpReceivedAt, event log (200 записей) |
+| `src/server/server.ts` | outMaxAmplitude в sendBinaryToRole, `GET /api/debug/relay-log` |
+
+**Результат диагностики (сессия 53beb1f7):**
+- Receiver relay → client: translatedMaxAmplitude=**16227** (реальное аудио!) но клиент молчит → **браузерный playback сломан**
+- Client relay → receiver: translatedMaxAmplitude=**0** (тишина от OpenAI) → **Opus decode возвращает нули**
+
+---
+
+### (текущий) — fix: replace AudioWorklet playback + fix Opus decode
+
+**Суть:** Два исправления:
+1. **Браузер playback**: заменён AudioWorklet PlaybackProcessor на AudioBufferSourceNode — проще, совместимее, не зависит от AudioWorklet support. Каждый PCM16 чанк конвертируется в Float32 AudioBuffer и планируется через `source.start(nextPlayTime)`.
+2. **Opus decode**: `rtp.payload` от werift — `Uint8Array`, а `opusscript.decode()` может требовать `Buffer`. Добавлена явная конвертация `Buffer.from(rtp.payload)`.
+3. **Детальное логирование**: первые 3 фрейма encode/decode логируются полностью (размеры, первые 10 семплов).
+
+**Изменённые файлы:**
+| Файл | Что изменилось |
+|------|----------------|
+| `src/server/relay.ts` | `Buffer.from(rtp.payload)` перед decode; детальные логи первых фреймов encode/decode |
+| `public/shared.js` | Playback через AudioBufferSourceNode вместо AudioWorklet; логирование audioCtx.state |
+
+**Ожидаемый результат:** Клиент должен услышать перевод (amplitude 16227 уже доходила). Receiver может всё ещё получать тишину если Opus decode остаётся нулевым — диагностика покажет.

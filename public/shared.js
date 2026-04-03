@@ -114,33 +114,50 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
   micSource.connect(captureNode);
   // captureNode does NOT connect to destination (no local playback of mic)
 
-  // ── Playback: WS binary → AudioWorklet → speaker ──
-  const playbackNode = new AudioWorkletNode(audioCtx, "playback-processor", {
-    outputChannelCount: [1],
-  });
-  playbackNode.connect(audioCtx.destination);
-
-  // Listen for stats from playback processor
+  // ── Playback: WS binary → AudioBufferSourceNode → speaker ──
+  // Using AudioBufferSourceNode instead of AudioWorklet for maximum compatibility.
+  // Each incoming PCM16 24kHz chunk is scheduled for seamless back-to-back playback.
   let playbackChunksReceived = 0;
-  playbackNode.port.onmessage = (e) => {
-    if (e.data && e.data.type === "stats") {
-      console.log("[Playback stats]", e.data);
-    }
-  };
+  let nextPlayTime = 0;
+  const SOURCE_RATE = 24000;
 
-  // Handler for binary audio from server
   function handleBinaryAudio(arrayBuffer) {
     playbackChunksReceived++;
     if (playbackChunksReceived % 50 === 0) {
-      console.log(`playback: received ${playbackChunksReceived} chunks from WS`);
+      console.log(`playback: received ${playbackChunksReceived} chunks, ctxState=${audioCtx.state}, nextPlayTime=${nextPlayTime.toFixed(3)}, currentTime=${audioCtx.currentTime.toFixed(3)}`);
     }
-    playbackNode.port.postMessage(arrayBuffer, [arrayBuffer]);
+
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
+
+    // Convert Int16 PCM 24kHz → Float32
+    const int16 = new Int16Array(arrayBuffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32768;
+    }
+
+    // Create AudioBuffer at source rate (24kHz) — browser handles resampling
+    const buffer = audioCtx.createBuffer(1, float32.length, SOURCE_RATE);
+    buffer.getChannelData(0).set(float32);
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+
+    // Schedule seamless playback
+    const now = audioCtx.currentTime;
+    if (nextPlayTime < now) {
+      nextPlayTime = now + 0.02; // small lead-in to avoid click
+    }
+    source.start(nextPlayTime);
+    nextPlayTime += buffer.duration;
   }
 
   function teardown() {
     try { micSource.disconnect(); } catch {}
     try { captureNode.disconnect(); } catch {}
-    try { playbackNode.disconnect(); } catch {}
     try { audioCtx.close(); } catch {}
   }
 
