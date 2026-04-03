@@ -257,6 +257,10 @@ function connectSocket() {
     role: "client",
     onBinary: (arrayBuffer) => {
       // Translated audio from server → playback
+      if (!window._clientFirstBinaryLogged) {
+        window._clientFirstBinaryLogged = true;
+        console.log(`[client] first binary audio received: ${arrayBuffer.byteLength} bytes, mediaHandle=${!!mediaHandle}`);
+      }
       mediaHandle?.handleBinaryAudio(arrayBuffer);
     },
     onMessage: async (msg) => {
@@ -368,6 +372,7 @@ async function startConversation() {
     callSubstatus.textContent = "Запускаем аудио-стриминг.";
 
     mediaHandle = await connectMediaStream(ws, micStream);
+    console.log("[client] mediaHandle created successfully:", !!mediaHandle?.handleBinaryAudio, !!mediaHandle?.teardown);
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
     callStatus.textContent = "Разговор";

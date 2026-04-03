@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { getOpenAiRealtimeModel } from "./openai.js";
-import { createRelay, destroyRelay, feedAudio, hasRelay, setOnTranslatedAudio, activeRelaySessionIds } from "./relay.js";
+import { createRelay, destroyRelay, feedAudio, hasRelay, setOnTranslatedAudio, activeRelaySessionIds, getRelayStats } from "./relay.js";
 import { SessionStore } from "./store.js";
 import type { SessionCreateRequest, SessionRole, SessionStatus } from "./types.js";
 
@@ -25,6 +25,18 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/api/session/signal" });
 const store = new SessionStore();
 const socketsBySession = new Map<string, Set<{ ws: WebSocket; role: SessionRole }>>();
+
+/* ── Server-side audio diagnostic counters ── */
+const serverAudioStats = new Map<string, { client: { wsBinaryIn: number; wsBinaryOut: number }; receiver: { wsBinaryIn: number; wsBinaryOut: number } }>();
+
+function getServerAudioStats(sessionId: string) {
+  let s = serverAudioStats.get(sessionId);
+  if (!s) {
+    s = { client: { wsBinaryIn: 0, wsBinaryOut: 0 }, receiver: { wsBinaryIn: 0, wsBinaryOut: 0 } };
+    serverAudioStats.set(sessionId, s);
+  }
+  return s;
+}
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(publicDir));
@@ -53,6 +65,13 @@ function broadcast(sessionId: string, event: unknown) {
 function sendBinaryToRole(sessionId: string, targetRole: SessionRole, data: Buffer) {
   const set = socketsBySession.get(sessionId);
   if (!set) return;
+
+  const sas = getServerAudioStats(sessionId);
+  const roleStats = targetRole === "client" ? sas.client : sas.receiver;
+  roleStats.wsBinaryOut++;
+  if (roleStats.wsBinaryOut % 100 === 0) {
+    console.log(`sendBinaryToRole [${sessionId}/${targetRole}]: sent ${roleStats.wsBinaryOut} frames, ${data.length} bytes last`);
+  }
 
   for (const entry of set) {
     if (entry.role === targetRole && entry.ws.readyState === entry.ws.OPEN) {
@@ -311,6 +330,34 @@ app.post("/api/realtime/bootstrap", async (req, res) => {
   }
 });
 
+/* ── Debug endpoints ── */
+app.get("/api/debug/relay-stats", (_req, res) => {
+  res.json({
+    relayStats: getRelayStats(),
+    serverAudioStats: Object.fromEntries(serverAudioStats),
+    activeSessions: activeRelaySessionIds(),
+  });
+});
+
+app.get("/api/debug/session/:id", (req, res) => {
+  const sessionId = req.params.id;
+  const session = publicSessionView(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: "not_found" });
+  }
+  const relayStats = getRelayStats();
+  const sas = serverAudioStats.get(sessionId);
+  const set = socketsBySession.get(sessionId);
+  const sockets = set ? [...set].map((e) => ({ role: e.role, readyState: e.ws.readyState })) : [];
+  return res.json({
+    session,
+    relayStats: relayStats[sessionId] || null,
+    serverAudioStats: sas || null,
+    connectedSockets: sockets,
+    hasRelay: { client: hasRelay(sessionId, "client"), receiver: hasRelay(sessionId, "receiver") },
+  });
+});
+
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url || "", baseUrl);
   const sessionId = url.searchParams.get("sessionId");
@@ -337,6 +384,12 @@ wss.on("connection", (ws, req) => {
     // Binary frame = PCM audio from browser mic → feed to relay
     if (isBinary || Buffer.isBuffer(raw)) {
       const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+      const sas = getServerAudioStats(sessionId);
+      const roleStats = role === "client" ? sas.client : sas.receiver;
+      roleStats.wsBinaryIn++;
+      if (roleStats.wsBinaryIn % 100 === 0) {
+        console.log(`ws binary IN [${sessionId}/${role}]: ${roleStats.wsBinaryIn} frames, ${buf.length} bytes last`);
+      }
       feedAudio(sessionId, role, buf);
       return;
     }

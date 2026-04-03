@@ -150,6 +150,10 @@ function connectSocket() {
     sessionId: currentSession.id,
     role: "receiver",
     onBinary: (arrayBuffer) => {
+      if (!window._receiverFirstBinaryLogged) {
+        window._receiverFirstBinaryLogged = true;
+        console.log(`[receiver] first binary audio received: ${arrayBuffer.byteLength} bytes, mediaHandle=${!!mediaHandle}`);
+      }
       mediaHandle?.handleBinaryAudio(arrayBuffer);
     },
     onMessage: async (msg) => {
@@ -218,6 +222,7 @@ async function acceptCall() {
     }
 
     mediaHandle = await connectMediaStream(ws, micStream);
+    console.log("[receiver] mediaHandle created successfully:", !!mediaHandle?.handleBinaryAudio, !!mediaHandle?.teardown);
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
     receiverCallStatus.textContent = "Разговор";

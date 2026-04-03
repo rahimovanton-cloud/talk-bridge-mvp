@@ -35,7 +35,54 @@ interface RelayPair {
   onTranslatedAudio: ((targetRole: SessionRole, pcm: Buffer) => void) | null;
 }
 
+/* ── Diagnostic counters ── */
+interface RelayStats {
+  feedChunks: number;
+  feedBytes: number;
+  opusFramesSent: number;
+  rtpReceived: number;
+  decodeErrors: number;
+  decodeEmpty: number;
+  translatedCallbacks: number;
+  translatedBytes: number;
+  connectionState: string;
+}
+
+function freshStats(): RelayStats {
+  return {
+    feedChunks: 0,
+    feedBytes: 0,
+    opusFramesSent: 0,
+    rtpReceived: 0,
+    decodeErrors: 0,
+    decodeEmpty: 0,
+    translatedCallbacks: 0,
+    translatedBytes: 0,
+    connectionState: "new",
+  };
+}
+
+const relayStatsMap = new Map<string, { client: RelayStats; receiver: RelayStats }>();
+
+function getStatsForSession(sessionId: string) {
+  let s = relayStatsMap.get(sessionId);
+  if (!s) {
+    s = { client: freshStats(), receiver: freshStats() };
+    relayStatsMap.set(sessionId, s);
+  }
+  return s;
+}
+
 const relays = new Map<string, RelayPair>();
+
+/** Expose relay stats for debug endpoint */
+export function getRelayStats(): Record<string, { client: RelayStats; receiver: RelayStats }> {
+  const out: Record<string, { client: RelayStats; receiver: RelayStats }> = {};
+  relayStatsMap.forEach((stats, sid) => {
+    out[sid] = stats;
+  });
+  return out;
+}
 
 function getOrCreatePair(sessionId: string): RelayPair {
   let pair = relays.get(sessionId);
@@ -141,26 +188,53 @@ export async function createRelay(
 
   // 5. Listen for translated audio from OpenAI via remote track
   const targetRole = oppositeRole(role);
-  pc.onTrack.subscribe((track) => {
-    track.onReceiveRtp.subscribe((rtp: RtpPacket) => {
+  const stats = getStatsForSession(sessionId);
+  const roleStats = role === "client" ? stats.client : stats.receiver;
+
+  pc.onTrack.subscribe((remoteTrack) => {
+    console.log(`relay [${sessionId}/${role}] onTrack: received remote track kind=${remoteTrack.kind}`);
+    remoteTrack.onReceiveRtp.subscribe((rtp: RtpPacket) => {
+      roleStats.rtpReceived++;
+      if (roleStats.rtpReceived % 100 === 0) {
+        console.log(`relay [${sessionId}/${role}] received ${roleStats.rtpReceived} translated RTP packets`);
+      }
       try {
         // Decode Opus → PCM 48kHz → resample to 24kHz
         const decoded = decoder.decode(rtp.payload);
-        if (!decoded || decoded.length === 0) return;
+        if (!decoded || decoded.length === 0) {
+          roleStats.decodeEmpty++;
+          if (roleStats.decodeEmpty % 50 === 0) {
+            console.log(`relay [${sessionId}/${role}] decode returned empty (${roleStats.decodeEmpty} total)`);
+          }
+          return;
+        }
 
         const pcm48 = new Int16Array(decoded.buffer, decoded.byteOffset, decoded.byteLength / 2);
         const pcm24 = resamplePcm16(pcm48, OPUS_SAMPLE_RATE, PCM_INPUT_RATE);
         const outBuf = Buffer.from(pcm24.buffer, pcm24.byteOffset, pcm24.byteLength);
 
+        roleStats.translatedCallbacks++;
+        roleStats.translatedBytes += outBuf.length;
+        if (roleStats.translatedCallbacks % 100 === 0) {
+          console.log(`relay [${sessionId}/${role}] onTranslatedAudio: ${roleStats.translatedCallbacks} callbacks, ${roleStats.translatedBytes} bytes total → target=${targetRole}`);
+        }
+
         pair.onTranslatedAudio?.(targetRole, outBuf);
       } catch (e) {
-        console.error(`relay decode error [${sessionId}/${role}]:`, e);
+        roleStats.decodeErrors++;
+        console.error(`relay decode error [${sessionId}/${role}] (#${roleStats.decodeErrors}):`, e);
       }
     });
   });
 
   pc.connectionStateChange.subscribe((state) => {
+    roleStats.connectionState = state;
     console.log(`relay [${sessionId}/${role}] connection: ${state}`);
+  });
+
+  // ICE connection state logging
+  pc.iceConnectionStateChange.subscribe((state) => {
+    console.log(`relay [${sessionId}/${role}] ICE: ${state}`);
   });
 
   // 6. SDP offer/answer with OpenAI
@@ -202,6 +276,16 @@ export function feedAudio(sessionId: string, role: SessionRole, pcmChunk: Buffer
   const relay = role === "client" ? pair.clientRelay : pair.receiverRelay;
   if (!relay) return;
 
+  const stats = getStatsForSession(sessionId);
+  const roleStats = role === "client" ? stats.client : stats.receiver;
+
+  roleStats.feedChunks++;
+  roleStats.feedBytes += pcmChunk.length;
+
+  if (roleStats.feedChunks % 100 === 0) {
+    console.log(`feedAudio [${sessionId}/${role}]: received ${roleStats.feedChunks} chunks, ${roleStats.feedBytes} bytes total, ${roleStats.opusFramesSent} opus frames sent`);
+  }
+
   // Accumulate PCM until we have a full 20ms frame
   relay.pcmBuffer = Buffer.concat([relay.pcmBuffer, pcmChunk]);
 
@@ -237,6 +321,7 @@ export function feedAudio(sessionId: string, role: SessionRole, pcmChunk: Buffer
 
       const rtp = new RtpPacket(header, opusFrame);
       relay.track.writeRtp(rtp);
+      roleStats.opusFramesSent++;
     } catch (e) {
       console.error(`relay encode error [${sessionId}/${role}]:`, e);
     }
@@ -261,7 +346,14 @@ export function destroyRelay(sessionId: string): void {
     }
   }
 
+  // Log final stats before cleanup
+  const finalStats = relayStatsMap.get(sessionId);
+  if (finalStats) {
+    console.log(`relay destroyed [${sessionId}] final stats:`, JSON.stringify(finalStats));
+  }
+
   relays.delete(sessionId);
+  relayStatsMap.delete(sessionId);
   console.log(`relay destroyed [${sessionId}]`);
 }
 

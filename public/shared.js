@@ -78,9 +78,18 @@ export async function connectMediaStream(ws, micStream) {
   const micSource = audioCtx.createMediaStreamSource(micStream);
   const captureNode = new AudioWorkletNode(audioCtx, "mic-capture-processor");
 
+  let micChunksSent = 0;
   captureNode.port.onmessage = (e) => {
+    if (e.data && e.data.type === "stats") {
+      console.log("[MicCapture stats]", e.data);
+      return;
+    }
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(e.data); // ArrayBuffer of Int16 PCM 24kHz
+      micChunksSent++;
+      if (micChunksSent % 50 === 0) {
+        console.log(`mic: sent ${micChunksSent} chunks via WS`);
+      }
     }
   };
 
@@ -93,8 +102,20 @@ export async function connectMediaStream(ws, micStream) {
   });
   playbackNode.connect(audioCtx.destination);
 
+  // Listen for stats from playback processor
+  let playbackChunksReceived = 0;
+  playbackNode.port.onmessage = (e) => {
+    if (e.data && e.data.type === "stats") {
+      console.log("[Playback stats]", e.data);
+    }
+  };
+
   // Handler for binary audio from server
   function handleBinaryAudio(arrayBuffer) {
+    playbackChunksReceived++;
+    if (playbackChunksReceived % 50 === 0) {
+      console.log(`playback: received ${playbackChunksReceived} chunks from WS`);
+    }
     playbackNode.port.postMessage(arrayBuffer, [arrayBuffer]);
   }
 
