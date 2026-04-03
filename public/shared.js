@@ -115,16 +115,15 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
   // captureNode does NOT connect to destination (no local playback of mic)
 
   // ── Playback: WS binary → AudioBufferSourceNode → speaker ──
-  // Using AudioBufferSourceNode instead of AudioWorklet for maximum compatibility.
-  // Each incoming PCM16 24kHz chunk is scheduled for seamless back-to-back playback.
+  // Listens directly on the WS for binary frames — no external wiring needed.
   let playbackChunksReceived = 0;
   let nextPlayTime = 0;
   const SOURCE_RATE = 24000;
 
   function handleBinaryAudio(arrayBuffer) {
     playbackChunksReceived++;
-    if (playbackChunksReceived % 50 === 0) {
-      console.log(`playback: received ${playbackChunksReceived} chunks, ctxState=${audioCtx.state}, nextPlayTime=${nextPlayTime.toFixed(3)}, currentTime=${audioCtx.currentTime.toFixed(3)}`);
+    if (playbackChunksReceived <= 3 || playbackChunksReceived % 50 === 0) {
+      console.log(`playback: chunk #${playbackChunksReceived}, ${arrayBuffer.byteLength} bytes, ctxState=${audioCtx.state}, currentTime=${audioCtx.currentTime.toFixed(3)}`);
     }
 
     if (audioCtx.state === "suspended") {
@@ -155,11 +154,20 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
     nextPlayTime += buffer.duration;
   }
 
+  // Listen for binary frames directly on the WS
+  const binaryListener = (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      handleBinaryAudio(event.data);
+    }
+  };
+  ws.addEventListener("message", binaryListener);
+
   function teardown() {
+    ws.removeEventListener("message", binaryListener);
     try { micSource.disconnect(); } catch {}
     try { captureNode.disconnect(); } catch {}
     try { audioCtx.close(); } catch {}
   }
 
-  return { teardown, handleBinaryAudio };
+  return { teardown };
 }
