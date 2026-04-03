@@ -21,7 +21,7 @@ function createParticipantState(role: SessionRole): ParticipantState {
     wsConnected: false,
     micGranted: false,
     realtimeConnected: false,
-    peerConnected: false,
+    relayConnected: false,
   };
 }
 

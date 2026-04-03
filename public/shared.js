@@ -3,17 +3,6 @@ export const MODEL_LABELS = {
   full: "gpt-4o-realtime-preview",
 };
 
-// ICE servers for peer-to-peer connections (NAT traversal)
-export const PEER_ICE_CONFIG = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:stun3.l.google.com:19302" },
-    { urls: "stun:stun4.l.google.com:19302" },
-  ],
-};
-
 export function languageHint() {
   return (navigator.language || "en").split("-")[0];
 }
@@ -26,13 +15,19 @@ export function formatDuration(startedAt) {
   return `${mm}:${ss}`;
 }
 
-export function connectSignalSocket({ sessionId, role, onMessage }) {
+export function connectSignalSocket({ sessionId, role, onMessage, onBinary }) {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${protocol}://${location.host}/api/session/signal?sessionId=${encodeURIComponent(sessionId)}&role=${role}`);
+  ws.binaryType = "arraybuffer";
+
   // Queue messages so async handlers finish before next message is processed.
-  // Prevents race: ICE candidates arriving before offer is fully handled.
   let queue = Promise.resolve();
   ws.addEventListener("message", (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      // Binary frame = translated PCM audio from server
+      onBinary?.(event.data);
+      return;
+    }
     queue = queue.then(() => onMessage(JSON.parse(event.data))).catch((err) => console.error("ws handler error:", err));
   });
   return ws;
@@ -59,80 +54,56 @@ export async function bootstrapRealtime({ sessionId, role, speakerLanguageHint }
     body: JSON.stringify({ sessionId, role, speakerLanguageHint }),
   });
   console.log("bootstrap response:", JSON.stringify(payload).slice(0, 300));
-  return { token: payload.clientSecret, model: payload.session?.modelId || "gpt-4o-mini-realtime-preview" };
+  return { ready: payload.ready };
 }
 
-export async function connectOpenAiRealtime({ token, model, micStream, onTrack, onEvent, onState }) {
-  const pc = new RTCPeerConnection();
-  const audioTrack = micStream.getAudioTracks()[0];
-  if (audioTrack) {
-    pc.addTrack(audioTrack, micStream);
+/**
+ * Connect mic audio stream to server via WebSocket binary frames,
+ * and play back translated audio received from server.
+ *
+ * Returns a teardown function.
+ */
+export async function connectMediaStream(ws, micStream) {
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+
+  // Resume context (iOS requires user gesture)
+  if (audioCtx.state === "suspended") {
+    await audioCtx.resume();
   }
 
-  const dc = pc.createDataChannel("oai-events");
-  dc.addEventListener("message", (event) => {
-    try {
-      onEvent?.(JSON.parse(event.data));
-    } catch {
-      onEvent?.(event.data);
+  // Load AudioWorklet
+  await audioCtx.audioWorklet.addModule("/audio-processor.js");
+
+  // ── Mic capture: mic → AudioWorklet → WS binary ──
+  const micSource = audioCtx.createMediaStreamSource(micStream);
+  const captureNode = new AudioWorkletNode(audioCtx, "mic-capture-processor");
+
+  captureNode.port.onmessage = (e) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(e.data); // ArrayBuffer of Int16 PCM 24kHz
     }
-  });
+  };
 
-  pc.addEventListener("connectionstatechange", () => {
-    console.log("OpenAI WebRTC state:", pc.connectionState);
-    onState?.(pc.connectionState);
-  });
-  pc.addEventListener("track", (event) => {
-    console.log("OpenAI track received:", event.track.kind, event.track.id);
-    // Attach to a hidden MUTED audio element to keep the track alive.
-    // Without this, browsers may pause/kill the track since nobody consumes it,
-    // and it arrives dead at the peer connection on the other side.
-    const keepAlive = document.createElement("audio");
-    keepAlive.srcObject = event.streams[0];
-    keepAlive.muted = true;
-    keepAlive.playsInline = true;
-    keepAlive.style.display = "none";
-    document.body.appendChild(keepAlive);
-    keepAlive.play().catch(() => {});
-    // Now forward the live track to the peer connection for the other party
-    onTrack(event.track, event.streams[0]);
-  });
+  micSource.connect(captureNode);
+  // captureNode does NOT connect to destination (no local playback of mic)
 
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-
-  // OpenAI Realtime WebRTC endpoint
-  const rtModel = model || "gpt-4o-mini-realtime-preview";
-  console.log("Connecting OpenAI WebRTC, model:", rtModel, "token:", token?.slice(0, 10) + "...");
-  const response = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(rtModel)}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/sdp",
-    },
-    body: offer.sdp,
+  // ── Playback: WS binary → AudioWorklet → speaker ──
+  const playbackNode = new AudioWorkletNode(audioCtx, "playback-processor", {
+    outputChannelCount: [1],
   });
+  playbackNode.connect(audioCtx.destination);
 
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    console.error("OpenAI WebRTC error:", response.status, errText);
-    throw new Error(`OpenAI Realtime: ${response.status} ${errText.slice(0, 200)}`);
+  // Handler for binary audio from server
+  function handleBinaryAudio(arrayBuffer) {
+    playbackNode.port.postMessage(arrayBuffer, [arrayBuffer]);
   }
 
-  const answerSdp = await response.text();
-  await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+  function teardown() {
+    try { micSource.disconnect(); } catch {}
+    try { captureNode.disconnect(); } catch {}
+    try { playbackNode.disconnect(); } catch {}
+    try { audioCtx.close(); } catch {}
+  }
 
-  return { pc, dc };
-}
-
-export function attachRemoteAudio(trackOrStream) {
-  const audio = document.createElement("audio");
-  audio.autoplay = true;
-  audio.playsInline = true;
-  audio.srcObject = trackOrStream instanceof MediaStream ? trackOrStream : new MediaStream([trackOrStream]);
-  // Append to DOM — required on iOS Safari for audio playback
-  audio.style.display = "none";
-  document.body.appendChild(audio);
-  audio.play().catch((err) => console.warn("audio play blocked:", err));
-  return audio;
+  return { teardown, handleBinaryAudio };
 }

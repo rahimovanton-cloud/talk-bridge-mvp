@@ -20,7 +20,7 @@ export interface ParticipantState {
   wsConnected: boolean;
   micGranted: boolean;
   realtimeConnected: boolean;
-  peerConnected: boolean;
+  relayConnected: boolean;
   languageHint?: string;
   lastSeenAt?: string;
 }

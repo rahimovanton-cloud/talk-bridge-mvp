@@ -5,7 +5,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
-import { createRealtimeClientSecret, getOpenAiRealtimeModel } from "./openai.js";
+import { getOpenAiRealtimeModel } from "./openai.js";
+import { createRelay, destroyRelay, feedAudio, hasRelay, setOnTranslatedAudio, activeRelaySessionIds } from "./relay.js";
 import { SessionStore } from "./store.js";
 import type { SessionCreateRequest, SessionRole, SessionStatus } from "./types.js";
 
@@ -48,13 +49,14 @@ function broadcast(sessionId: string, event: unknown) {
   }
 }
 
-function broadcastToOther(sessionId: string, role: SessionRole, event: unknown) {
+/** Send binary audio data to a specific role's WebSocket */
+function sendBinaryToRole(sessionId: string, targetRole: SessionRole, data: Buffer) {
   const set = socketsBySession.get(sessionId);
   if (!set) return;
 
   for (const entry of set) {
-    if (entry.role !== role && entry.ws.readyState === entry.ws.OPEN) {
-      entry.ws.send(JSON.stringify(event));
+    if (entry.role === targetRole && entry.ws.readyState === entry.ws.OPEN) {
+      entry.ws.send(data);
     }
   }
 }
@@ -217,6 +219,8 @@ app.post("/api/session/end", (req, res) => {
     return res.status(404).json({ error: "not_found" });
   }
 
+  destroyRelay(sessionId);
+
   store.updateStatus(sessionId, "ended", {
     endedAt: new Date().toISOString(),
     endReason: reason || "ended_by_user",
@@ -238,6 +242,10 @@ app.get("/api/session/:id/status", (req, res) => {
   return res.json({ session });
 });
 
+/**
+ * Server relay bootstrap: server connects to OpenAI on behalf of the browser.
+ * No ephemeral token is returned — the server holds the connection.
+ */
 app.post("/api/realtime/bootstrap", async (req, res) => {
   const { sessionId, role, speakerLanguageHint } = req.body ?? {};
   const session = store.getById(sessionId);
@@ -257,42 +265,49 @@ app.post("/api/realtime/bootstrap", async (req, res) => {
 
   const speakerHint = speakerLanguageHint || (role === "client" ? session.clientLanguageHint : session.receiverLanguageHint);
   const listenerHint = role === "client" ? (session.receiverLanguageHint || session.receiverState.languageHint) : (session.clientLanguageHint || session.clientState.languageHint);
+  const voice = role === "client" ? session.clientVoice : session.receiverVoice;
 
   try {
-    // Voice: this session translates the speaker's words for the listener.
-    // Client's session → listener is receiver → use clientVoice (voice receiver will hear)
-    // Receiver's session → listener is client → use receiverVoice (voice client will hear)
-    const voice = role === "client" ? session.clientVoice : session.receiverVoice;
-
-    const bootstrap = await createRealtimeClientSecret({
+    // Create server-side WebRTC relay to OpenAI
+    await createRelay(sessionId, role, {
       apiKey,
       model: session.model,
-      speakerRole: role,
       speakerLanguageHint: speakerHint,
       listenerLanguageHint: listenerHint,
-      clientName: session.clientName,
       voice,
+    });
+
+    // Register callback: when translated audio arrives, send to the OTHER browser
+    setOnTranslatedAudio(sessionId, (targetRole, pcmBuffer) => {
+      sendBinaryToRole(sessionId, targetRole, pcmBuffer);
     });
 
     store.markParticipant(sessionId, role, {
       realtimeConnected: true,
+      relayConnected: true,
       languageHint: speakerHint,
       connected: true,
     });
-    updateStatus(sessionId, "connecting", {
-      startedAt: session.startedAt || new Date().toISOString(),
-    });
 
-    const secret = bootstrap.client_secret || bootstrap;
+    // Check if both sides have relay → transition to active
+    if (hasRelay(sessionId, "client") && hasRelay(sessionId, "receiver")) {
+      updateStatus(sessionId, "active", {
+        startedAt: session.startedAt || new Date().toISOString(),
+      });
+    } else {
+      updateStatus(sessionId, "connecting", {
+        startedAt: session.startedAt || new Date().toISOString(),
+      });
+    }
+
     return res.json({
-      clientSecret: secret.value || secret,
-      expiresAt: secret.expires_at,
+      ready: true,
       session: publicSessionView(sessionId),
     });
   } catch (error) {
     console.error(error);
     updateStatus(sessionId, "failed");
-    return res.status(502).json({ error: "openai_bootstrap_failed", message: "Не удалось получить временный доступ к OpenAI Realtime." });
+    return res.status(502).json({ error: "relay_failed", message: "Не удалось создать серверный relay к OpenAI Realtime." });
   }
 });
 
@@ -318,28 +333,22 @@ wss.on("connection", (ws, req) => {
   store.markParticipant(sessionId, role, { wsConnected: true, connected: true });
   broadcast(sessionId, { type: "session.updated", session: publicSessionView(sessionId) });
 
-  ws.on("message", (raw) => {
+  ws.on("message", (raw, isBinary) => {
+    // Binary frame = PCM audio from browser mic → feed to relay
+    if (isBinary || Buffer.isBuffer(raw)) {
+      const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+      feedAudio(sessionId, role, buf);
+      return;
+    }
+
+    // Text frame = JSON control message
     try {
       const message = JSON.parse(String(raw));
 
       if (message.type === "participant.state") {
         store.markParticipant(sessionId, role, message.patch ?? {});
-        if (message.patch?.peerConnected) {
-          updateStatus(sessionId, "active", {
-            startedAt: session.startedAt || new Date().toISOString(),
-          });
-        } else {
-          broadcast(sessionId, { type: "session.updated", session: publicSessionView(sessionId) });
-        }
+        broadcast(sessionId, { type: "session.updated", session: publicSessionView(sessionId) });
         return;
-      }
-
-      if (message.type === "peer.signal") {
-        broadcastToOther(sessionId, role, {
-          type: "peer.signal",
-          from: role,
-          payload: message.payload,
-        });
       }
     } catch (error) {
       console.error("ws_message_error", error);
@@ -348,15 +357,28 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     set.delete(entry);
-    store.markParticipant(sessionId, role, { wsConnected: false, connected: false, peerConnected: false });
+    store.markParticipant(sessionId, role, { wsConnected: false, connected: false, relayConnected: false });
     broadcast(sessionId, { type: "session.updated", session: publicSessionView(sessionId) });
+
+    // If both participants disconnected, destroy relay
+    const remaining = [...set].filter((e) => e.ws.readyState === e.ws.OPEN);
+    if (remaining.length === 0) {
+      destroyRelay(sessionId);
+    }
   });
 });
 
 setInterval(() => {
   store.cleanupExpired();
+  // Also cleanup relays for expired sessions
+  for (const sid of activeRelaySessionIds()) {
+    const session = store.getById(sid);
+    if (!session || session.status === "expired" || session.status === "ended" || session.status === "failed") {
+      destroyRelay(sid);
+    }
+  }
 }, 30_000).unref();
 
 server.listen(port, () => {
-  console.log(`Talk Bridge MVP listening on ${baseUrl}`);
+  console.log(`Talk Bridge MVP (server relay) listening on ${baseUrl}`);
 });

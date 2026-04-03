@@ -1,0 +1,283 @@
+import {
+  RTCPeerConnection,
+  MediaStreamTrack,
+  RtpPacket,
+  RtpHeader,
+  useOPUS,
+} from "werift";
+import OpusScript from "opusscript";
+import { createRealtimeClientSecret, getOpenAiRealtimeModel } from "./openai.js";
+import type { SessionRole, TalkModelChoice } from "./types.js";
+
+/* ── Opus codec constants ── */
+const OPUS_SAMPLE_RATE = 48000;
+const OPUS_FRAME_DURATION_MS = 20;
+const OPUS_FRAME_SIZE = (OPUS_SAMPLE_RATE * OPUS_FRAME_DURATION_MS) / 1000; // 960 samples
+const PCM_INPUT_RATE = 24000;
+const PCM_FRAME_SIZE = (PCM_INPUT_RATE * OPUS_FRAME_DURATION_MS) / 1000; // 480 samples
+
+/* ── Types ── */
+
+interface SingleRelay {
+  pc: RTCPeerConnection;
+  track: MediaStreamTrack;
+  encoder: OpusScript;
+  decoder: OpusScript;
+  seqNum: number;
+  timestamp: number;
+  ssrc: number;
+  pcmBuffer: Buffer; // accumulates incoming PCM until we have a full frame
+}
+
+interface RelayPair {
+  clientRelay: SingleRelay | null;
+  receiverRelay: SingleRelay | null;
+  onTranslatedAudio: ((targetRole: SessionRole, pcm: Buffer) => void) | null;
+}
+
+const relays = new Map<string, RelayPair>();
+
+function getOrCreatePair(sessionId: string): RelayPair {
+  let pair = relays.get(sessionId);
+  if (!pair) {
+    pair = { clientRelay: null, receiverRelay: null, onTranslatedAudio: null };
+    relays.set(sessionId, pair);
+  }
+  return pair;
+}
+
+function oppositeRole(role: SessionRole): SessionRole {
+  return role === "client" ? "receiver" : "client";
+}
+
+/**
+ * Resample PCM16 from inputRate to outputRate (simple linear interpolation).
+ */
+function resamplePcm16(input: Int16Array, inputRate: number, outputRate: number): Int16Array {
+  if (inputRate === outputRate) return input;
+  const ratio = inputRate / outputRate;
+  const outputLen = Math.floor(input.length / ratio);
+  const output = new Int16Array(outputLen);
+  for (let i = 0; i < outputLen; i++) {
+    const srcIdx = i * ratio;
+    const idx = Math.floor(srcIdx);
+    const frac = srcIdx - idx;
+    const a = input[idx] ?? 0;
+    const b = input[Math.min(idx + 1, input.length - 1)] ?? 0;
+    output[i] = Math.round(a + frac * (b - a));
+  }
+  return output;
+}
+
+/* ── Public API ── */
+
+export function setOnTranslatedAudio(
+  sessionId: string,
+  cb: (targetRole: SessionRole, pcm: Buffer) => void,
+) {
+  const pair = getOrCreatePair(sessionId);
+  pair.onTranslatedAudio = cb;
+}
+
+export async function createRelay(
+  sessionId: string,
+  role: SessionRole,
+  config: {
+    apiKey: string;
+    model: TalkModelChoice;
+    speakerLanguageHint?: string;
+    listenerLanguageHint?: string;
+    voice?: string;
+  },
+): Promise<void> {
+  const pair = getOrCreatePair(sessionId);
+
+  // 1. Get ephemeral token
+  const bootstrap = await createRealtimeClientSecret({
+    apiKey: config.apiKey,
+    model: config.model,
+    speakerLanguageHint: config.speakerLanguageHint,
+    listenerLanguageHint: config.listenerLanguageHint,
+    voice: config.voice,
+  });
+  const secret = bootstrap.client_secret || bootstrap;
+  const token: string = secret.value || secret;
+
+  // 2. Create werift RTCPeerConnection with Opus codec
+  const pc = new RTCPeerConnection({
+    codecs: {
+      audio: [
+        useOPUS({
+          payloadType: 111,
+        }),
+      ],
+    },
+  });
+
+  // 3. Create synthetic audio track for mic input
+  const track = new MediaStreamTrack({ kind: "audio" });
+  const transceiver = pc.addTransceiver(track, { direction: "sendrecv" });
+
+  // 4. Opus encoder/decoder
+  const encoder = new OpusScript(OPUS_SAMPLE_RATE, 1, OpusScript.Application.AUDIO);
+  const decoder = new OpusScript(OPUS_SAMPLE_RATE, 1, OpusScript.Application.AUDIO);
+
+  const relay: SingleRelay = {
+    pc,
+    track,
+    encoder,
+    decoder,
+    seqNum: Math.floor(Math.random() * 0xffff),
+    timestamp: Math.floor(Math.random() * 0xffffffff),
+    ssrc: transceiver.sender.ssrc ?? Math.floor(Math.random() * 0xffffffff),
+    pcmBuffer: Buffer.alloc(0),
+  };
+
+  if (role === "client") {
+    pair.clientRelay = relay;
+  } else {
+    pair.receiverRelay = relay;
+  }
+
+  // 5. Listen for translated audio from OpenAI via remote track
+  const targetRole = oppositeRole(role);
+  pc.onTrack.subscribe((track) => {
+    track.onReceiveRtp.subscribe((rtp: RtpPacket) => {
+      try {
+        // Decode Opus → PCM 48kHz → resample to 24kHz
+        const decoded = decoder.decode(rtp.payload);
+        if (!decoded || decoded.length === 0) return;
+
+        const pcm48 = new Int16Array(decoded.buffer, decoded.byteOffset, decoded.byteLength / 2);
+        const pcm24 = resamplePcm16(pcm48, OPUS_SAMPLE_RATE, PCM_INPUT_RATE);
+        const outBuf = Buffer.from(pcm24.buffer, pcm24.byteOffset, pcm24.byteLength);
+
+        pair.onTranslatedAudio?.(targetRole, outBuf);
+      } catch (e) {
+        console.error(`relay decode error [${sessionId}/${role}]:`, e);
+      }
+    });
+  });
+
+  pc.connectionStateChange.subscribe((state) => {
+    console.log(`relay [${sessionId}/${role}] connection: ${state}`);
+  });
+
+  // 6. SDP offer/answer with OpenAI
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const modelId = getOpenAiRealtimeModel(config.model);
+  const sdpResponse = await fetch(
+    `https://api.openai.com/v1/realtime?model=${encodeURIComponent(modelId)}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/sdp",
+      },
+      body: pc.localDescription!.sdp,
+    },
+  );
+
+  if (!sdpResponse.ok) {
+    const errText = await sdpResponse.text();
+    pc.close();
+    throw new Error(`OpenAI SDP exchange failed: ${sdpResponse.status} ${errText.slice(0, 300)}`);
+  }
+
+  const answerSdp = await sdpResponse.text();
+  await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+
+  console.log(`relay created [${sessionId}/${role}] model=${modelId}`);
+}
+
+/**
+ * Feed raw PCM16 24kHz mono audio from browser mic into the OpenAI WebRTC connection.
+ */
+export function feedAudio(sessionId: string, role: SessionRole, pcmChunk: Buffer): void {
+  const pair = relays.get(sessionId);
+  if (!pair) return;
+
+  const relay = role === "client" ? pair.clientRelay : pair.receiverRelay;
+  if (!relay) return;
+
+  // Accumulate PCM until we have a full 20ms frame
+  relay.pcmBuffer = Buffer.concat([relay.pcmBuffer, pcmChunk]);
+
+  const frameSizeBytes = PCM_FRAME_SIZE * 2; // Int16 = 2 bytes per sample
+
+  while (relay.pcmBuffer.length >= frameSizeBytes) {
+    const frameData = relay.pcmBuffer.subarray(0, frameSizeBytes);
+    relay.pcmBuffer = relay.pcmBuffer.subarray(frameSizeBytes);
+
+    try {
+      // Resample 24kHz → 48kHz for Opus
+      const pcm24 = new Int16Array(
+        frameData.buffer,
+        frameData.byteOffset,
+        frameData.byteLength / 2,
+      );
+      const pcm48 = resamplePcm16(pcm24, PCM_INPUT_RATE, OPUS_SAMPLE_RATE);
+
+      // Encode to Opus
+      const opusFrame = relay.encoder.encode(
+        Buffer.from(pcm48.buffer, pcm48.byteOffset, pcm48.byteLength),
+        OPUS_FRAME_SIZE,
+      );
+
+      // Wrap in RTP
+      const header = new RtpHeader();
+      header.payloadType = 111;
+      header.sequenceNumber = relay.seqNum++ & 0xffff;
+      header.timestamp = relay.timestamp;
+      header.ssrc = relay.ssrc;
+
+      relay.timestamp = (relay.timestamp + OPUS_FRAME_SIZE) >>> 0;
+
+      const rtp = new RtpPacket(header, opusFrame);
+      relay.track.writeRtp(rtp);
+    } catch (e) {
+      console.error(`relay encode error [${sessionId}/${role}]:`, e);
+    }
+  }
+}
+
+/**
+ * Destroy all relay connections for a session.
+ */
+export function destroyRelay(sessionId: string): void {
+  const pair = relays.get(sessionId);
+  if (!pair) return;
+
+  for (const relay of [pair.clientRelay, pair.receiverRelay]) {
+    if (!relay) continue;
+    try {
+      relay.pc.close();
+      relay.encoder.delete();
+      relay.decoder.delete();
+    } catch (e) {
+      console.error(`relay cleanup error [${sessionId}]:`, e);
+    }
+  }
+
+  relays.delete(sessionId);
+  console.log(`relay destroyed [${sessionId}]`);
+}
+
+/**
+ * Check if relay exists for a session.
+ */
+export function hasRelay(sessionId: string, role?: SessionRole): boolean {
+  const pair = relays.get(sessionId);
+  if (!pair) return false;
+  if (!role) return !!(pair.clientRelay || pair.receiverRelay);
+  return role === "client" ? !!pair.clientRelay : !!pair.receiverRelay;
+}
+
+/**
+ * Get all active session IDs with relays.
+ */
+export function activeRelaySessionIds(): string[] {
+  return [...relays.keys()];
+}

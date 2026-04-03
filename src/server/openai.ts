@@ -9,19 +9,14 @@ export function getOpenAiRealtimeModel(model: TalkModelChoice) {
   return MODEL_MAP[model];
 }
 
-export async function createRealtimeClientSecret(params: {
-  apiKey: string;
-  model: TalkModelChoice;
-  speakerRole: "client" | "receiver";
+export function buildTranslationInstructions(params: {
   speakerLanguageHint?: string;
   listenerLanguageHint?: string;
-  clientName: string;
-  voice?: string;
 }) {
   const targetLang = params.listenerLanguageHint || "auto-detect";
   const sourceLang = params.speakerLanguageHint || "auto-detect";
 
-  const instructions = [
+  return [
     `You are a simultaneous interpreter. Your sole function is to translate spoken ${sourceLang} into ${targetLang}.`,
     "",
     "ABSOLUTE RULES — VIOLATION IS FAILURE:",
@@ -35,6 +30,23 @@ export async function createRealtimeClientSecret(params: {
     "",
     "You are invisible. The listener should feel like the speaker is talking directly to them in their language.",
   ].join("\n");
+}
+
+/**
+ * Create an ephemeral client secret for OpenAI Realtime.
+ * Still needed because the server-side WebRTC SDP exchange uses Bearer token auth.
+ */
+export async function createRealtimeClientSecret(params: {
+  apiKey: string;
+  model: TalkModelChoice;
+  speakerLanguageHint?: string;
+  listenerLanguageHint?: string;
+  voice?: string;
+}) {
+  const instructions = buildTranslationInstructions({
+    speakerLanguageHint: params.speakerLanguageHint,
+    listenerLanguageHint: params.listenerLanguageHint,
+  });
 
   const modelId = getOpenAiRealtimeModel(params.model);
 

@@ -1,8 +1,6 @@
 import {
-  PEER_ICE_CONFIG,
-  attachRemoteAudio,
   bootstrapRealtime,
-  connectOpenAiRealtime,
+  connectMediaStream,
   connectSignalSocket,
   fetchJson,
   formatDuration,
@@ -22,13 +20,9 @@ const receiverEndView = document.getElementById("receiverEndView");
 const inviteToken = location.pathname.split("/").pop();
 let currentSession = null;
 let ws = null;
-let peerPc = null;
-let openAiPc = null;
 let micStream = null;
-let remoteAudio = null;
+let mediaHandle = null;
 let timerId = null;
-let makingOffer = false;
-let ignoreOffer = false;
 let ringerCtx = null;
 let ringerTimer = null;
 let answered = false;
@@ -44,7 +38,6 @@ function unlockAudio() {
   } catch { /* no audio support */ }
 }
 
-// Unlock on any first touch/click
 document.addEventListener("touchstart", unlockAudio, { once: true });
 document.addEventListener("click", unlockAudio, { once: true });
 
@@ -156,6 +149,9 @@ function connectSocket() {
   ws = connectSignalSocket({
     sessionId: currentSession.id,
     role: "receiver",
+    onBinary: (arrayBuffer) => {
+      mediaHandle?.handleBinaryAudio(arrayBuffer);
+    },
     onMessage: async (msg) => {
       if (msg.type === "session.updated") {
         currentSession = msg.session;
@@ -168,9 +164,6 @@ function connectSocket() {
         currentSession = msg.session;
         await teardownMedia();
         showEndView();
-      }
-      if (msg.type === "peer.signal") {
-        await handlePeerSignal(msg.payload);
       }
     },
   });
@@ -214,33 +207,23 @@ async function acceptCall() {
     receiverCallStatus.textContent = "Подключение";
     receiverBanner.textContent = "Запускаем перевод.";
 
-    await ensurePeerConnection();
     const bootstrap = await bootstrapRealtime({
       sessionId: currentSession.id,
       role: "receiver",
       speakerLanguageHint: languageHint(),
     });
 
-    const realtime = await connectOpenAiRealtime({
-      token: bootstrap.token,
-      model: bootstrap.model,
-      micStream,
-      onTrack: async (track, stream) => {
-        await attachTranslatedTrack(stream, track);
-      },
-      onState: (state) => {
-        receiverBanner.textContent = state === "connected" ? "Перевод идёт автоматически." : `OpenAI: ${state}`;
-      },
-    });
+    if (!bootstrap.ready) {
+      throw new Error("Сервер не смог создать relay.");
+    }
 
-    openAiPc = realtime.pc;
+    mediaHandle = await connectMediaStream(ws, micStream);
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
     receiverCallStatus.textContent = "Разговор";
     receiverBanner.textContent = "Перевод активен.";
   } catch (error) {
     console.error("acceptCall error:", error);
-    // If we already showed the call view, stay on it and show error there
     if (receiverCallView.style.display !== "none") {
       receiverCallStatus.textContent = "Ошибка";
       receiverBanner.textContent = error.message || "Не удалось подключиться.";
@@ -255,92 +238,6 @@ async function acceptCall() {
 async function ensureMic() {
   if (micStream) return;
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-}
-
-async function ensurePeerConnection() {
-  if (peerPc) return;
-  peerPc = new RTCPeerConnection(PEER_ICE_CONFIG);
-
-  peerPc.addEventListener("icecandidate", ({ candidate }) => {
-    if (candidate) sendPeerSignal({ type: "ice", candidate });
-  });
-
-  peerPc.addEventListener("track", (event) => {
-    console.log("RECEIVER: got peer track", event.track.kind, event.track.id);
-    remoteAudio = attachRemoteAudio(event.streams[0] || event.track);
-    receiverCallStatus.textContent = "Разговор";
-    receiverBanner.textContent = "Собеседник на линии.";
-    ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
-  });
-
-  // Perfect Negotiation (MDN spec): RECEIVER is the POLITE side
-  peerPc.addEventListener("negotiationneeded", async () => {
-    try {
-      makingOffer = true;
-      await peerPc.setLocalDescription();
-      console.log("RECEIVER: sending offer (negotiationneeded)");
-      sendPeerSignal({ type: "offer", sdp: peerPc.localDescription.sdp });
-    } catch (e) {
-      console.error("RECEIVER: negotiationneeded error:", e);
-    } finally {
-      makingOffer = false;
-    }
-  });
-
-  peerPc.addEventListener("connectionstatechange", () => {
-    console.log("RECEIVER peer connection:", peerPc.connectionState);
-  });
-  peerPc.addEventListener("iceconnectionstatechange", () => {
-    console.log("RECEIVER ICE connection:", peerPc.iceConnectionState);
-  });
-}
-
-async function attachTranslatedTrack(stream, track) {
-  try {
-    if (!peerPc) await ensurePeerConnection();
-    const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
-    if (existing) return;
-    console.log("RECEIVER: adding translated track to peer connection", track.kind, track.id);
-    peerPc.addTrack(track, stream);
-    // negotiationneeded event fires automatically → sends offer
-  } catch (e) {
-    console.error("RECEIVER: attachTranslatedTrack error:", e);
-  }
-}
-
-async function handlePeerSignal(p) {
-  await ensurePeerConnection();
-
-  try {
-    if (p.type === "offer") {
-      const offerCollision = makingOffer || peerPc.signalingState !== "stable";
-      // POLITE side: accept the incoming offer on collision (they win)
-      ignoreOffer = false;
-      if (offerCollision) {
-        console.log("RECEIVER (polite): accepting colliding offer, rolling back ours");
-      }
-      // setRemoteDescription implicitly rolls back if we're in have-local-offer
-      await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
-      await peerPc.setLocalDescription();
-      sendPeerSignal({ type: "answer", sdp: peerPc.localDescription.sdp });
-      return;
-    }
-    if (p.type === "answer") {
-      await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp });
-      return;
-    }
-    if (p.type === "ice" && p.candidate) {
-      await peerPc.addIceCandidate(p.candidate);
-    }
-  } catch (e) {
-    if (!ignoreOffer) {
-      console.error("RECEIVER: handlePeerSignal error:", e);
-    }
-  }
-}
-
-function sendPeerSignal(payload) {
-  ws?.send(JSON.stringify({ type: "peer.signal", payload }));
 }
 
 function startTimer() {
@@ -370,10 +267,7 @@ async function endConversation(reason) {
 
 async function teardownMedia() {
   stopTimer();
-  [peerPc, openAiPc].forEach((pc) => pc?.close());
-  peerPc = null;
-  openAiPc = null;
+  mediaHandle?.teardown();
+  mediaHandle = null;
   if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
-  remoteAudio?.remove();
-  remoteAudio = null;
 }

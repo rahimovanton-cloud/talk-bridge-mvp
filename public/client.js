@@ -1,9 +1,7 @@
 import {
   MODEL_LABELS,
-  PEER_ICE_CONFIG,
-  attachRemoteAudio,
   bootstrapRealtime,
-  connectOpenAiRealtime,
+  connectMediaStream,
   connectSignalSocket,
   fetchJson,
   formatDuration,
@@ -46,13 +44,9 @@ let selectedClientVoice = "ash";
 let selectedReceiverVoice = "shimmer";
 let currentSession = null;
 let ws = null;
-let peerPc = null;
-let openAiPc = null;
 let micStream = null;
 let timerId = null;
-let remoteAudio = null;
-let makingOffer = false;
-let ignoreOffer = false;
+let mediaHandle = null; // { teardown, handleBinaryAudio }
 let autoStartedSessionId = null;
 
 init();
@@ -139,7 +133,6 @@ function bindEvents() {
       await navigator.clipboard.writeText(inviteUrlInput.value);
       contactHint.textContent = "Ссылка скопирована ✓";
     } catch {
-      // fallback
       inviteUrlInput.select();
       document.execCommand("copy");
       contactHint.textContent = "Ссылка скопирована ✓";
@@ -262,6 +255,10 @@ function connectSocket() {
   ws = connectSignalSocket({
     sessionId: currentSession.id,
     role: "client",
+    onBinary: (arrayBuffer) => {
+      // Translated audio from server → playback
+      mediaHandle?.handleBinaryAudio(arrayBuffer);
+    },
     onMessage: async (msg) => {
       console.log("ws msg:", msg.type, msg);
       if (msg.type === "session.updated") {
@@ -290,10 +287,6 @@ function connectSocket() {
         clientEndSwipe.classList.add("hidden");
         markQrExpired();
         setTab(1);
-      }
-
-      if (msg.type === "peer.signal") {
-        await handlePeerSignal(msg.payload);
       }
     },
   });
@@ -327,7 +320,6 @@ function renderSessionState() {
     .map(([l, v]) => `<div class="tech-row"><span>${l}</span><strong>${v}</strong></div>`)
     .join("");
 
-  // Call screen states
   if (currentSession.status === "ringing") {
     callStatus.textContent = "Идёт вызов";
     callSubstatus.textContent = "Ждём ответ собеседника.";
@@ -355,7 +347,7 @@ function markQrExpired() {
 }
 
 async function startConversation() {
-  if (!currentSession || openAiPc) return;
+  if (!currentSession || mediaHandle) return;
   callStatus.textContent = "Подключение";
   callSubstatus.textContent = "Запрашиваем микрофон.";
 
@@ -363,38 +355,19 @@ async function startConversation() {
     await ensureMic();
     callSubstatus.textContent = "Микрофон получен. Подключаем перевод.";
 
-    await ensurePeerConnection();
-    callSubstatus.textContent = "Получаем ключ OpenAI.";
-
     const bootstrap = await bootstrapRealtime({
       sessionId: currentSession.id,
       role: "client",
       speakerLanguageHint: languageHint(),
     });
 
-    callSubstatus.textContent = "Подключаем OpenAI Realtime.";
+    if (!bootstrap.ready) {
+      throw new Error("Сервер не смог создать relay.");
+    }
 
-    const realtime = await connectOpenAiRealtime({
-      token: bootstrap.token,
-      model: bootstrap.model,
-      micStream,
-      onTrack: async (track, stream) => { await attachTranslatedTrack(stream, track); },
-      onState: (state) => {
-        console.log("openai state:", state);
-        if (state === "connected") {
-          callStatus.textContent = "Разговор";
-          callSubstatus.textContent = "Перевод активен.";
-          callTimer.classList.remove("hidden");
-          clientEndSwipe.classList.remove("hidden");
-        } else if (state === "failed") {
-          callSubstatus.textContent = "Ошибка соединения OpenAI.";
-        } else {
-          callSubstatus.textContent = `OpenAI: ${state}`;
-        }
-      },
-    });
+    callSubstatus.textContent = "Запускаем аудио-стриминг.";
 
-    openAiPc = realtime.pc;
+    mediaHandle = await connectMediaStream(ws, micStream);
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
     callStatus.textContent = "Разговор";
@@ -413,97 +386,6 @@ async function ensureMic() {
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 }
 
-async function ensurePeerConnection() {
-  if (peerPc) return;
-  peerPc = new RTCPeerConnection(PEER_ICE_CONFIG);
-
-  peerPc.addEventListener("icecandidate", ({ candidate }) => {
-    if (candidate) sendPeerSignal({ type: "ice", candidate });
-  });
-
-  peerPc.addEventListener("track", (event) => {
-    console.log("CLIENT: received peer track", event.track.kind, event.track.id);
-    remoteAudio = attachRemoteAudio(event.streams[0] || event.track);
-    callStatus.textContent = "Разговор";
-    callSubstatus.textContent = "Собеседник подключён.";
-    ws?.send(JSON.stringify({ type: "participant.state", patch: { peerConnected: true } }));
-  });
-
-  // Perfect Negotiation (MDN spec): CLIENT is the IMPOLITE side
-  peerPc.addEventListener("negotiationneeded", async () => {
-    try {
-      makingOffer = true;
-      await peerPc.setLocalDescription();
-      console.log("CLIENT: sending offer (negotiationneeded)");
-      sendPeerSignal({ type: "offer", sdp: peerPc.localDescription.sdp });
-    } catch (e) {
-      console.error("CLIENT: negotiationneeded error:", e);
-    } finally {
-      makingOffer = false;
-    }
-  });
-
-  peerPc.addEventListener("iceconnectionstatechange", () => {
-    console.log("CLIENT ICE connection:", peerPc.iceConnectionState);
-  });
-  peerPc.addEventListener("connectionstatechange", () => {
-    console.log("CLIENT peer connection:", peerPc.connectionState);
-    if (peerPc.connectionState === "connected") {
-      callStatus.textContent = "Разговор";
-      callSubstatus.textContent = "Канал связи стабилен.";
-    }
-  });
-}
-
-async function attachTranslatedTrack(stream, track) {
-  try {
-    if (!peerPc) await ensurePeerConnection();
-    const existing = peerPc.getSenders().find((s) => s.track?.id === track.id);
-    if (existing) return;
-    console.log("CLIENT: adding translated track to peer connection", track.kind, track.id);
-    peerPc.addTrack(track, stream);
-    // negotiationneeded event fires automatically → sends offer
-  } catch (e) {
-    console.error("CLIENT: attachTranslatedTrack error:", e);
-  }
-}
-
-async function handlePeerSignal(p) {
-  if (!currentSession) return;
-  await ensurePeerConnection();
-
-  try {
-    if (p.type === "offer") {
-      const offerCollision = makingOffer || peerPc.signalingState !== "stable";
-      // IMPOLITE side: ignore the incoming offer on collision (we win)
-      ignoreOffer = offerCollision;
-      if (ignoreOffer) {
-        console.log("CLIENT (impolite): ignoring colliding offer");
-        return;
-      }
-      await peerPc.setRemoteDescription({ type: "offer", sdp: p.sdp });
-      await peerPc.setLocalDescription();
-      sendPeerSignal({ type: "answer", sdp: peerPc.localDescription.sdp });
-      return;
-    }
-    if (p.type === "answer") {
-      await peerPc.setRemoteDescription({ type: "answer", sdp: p.sdp });
-      return;
-    }
-    if (p.type === "ice" && p.candidate) {
-      await peerPc.addIceCandidate(p.candidate);
-    }
-  } catch (e) {
-    if (!ignoreOffer) {
-      console.error("CLIENT: handlePeerSignal error:", e);
-    }
-  }
-}
-
-function sendPeerSignal(payload) {
-  ws?.send(JSON.stringify({ type: "peer.signal", payload }));
-}
-
 function startTimer() {
   stopTimer();
   callTimer.classList.remove("hidden");
@@ -520,7 +402,6 @@ function stopTimer() {
 }
 
 async function endConversation(reason, options = {}) {
-  // Capture call duration before teardown
   const finalDuration = callTimer.textContent || "00:00";
 
   if (currentSession) {
@@ -543,10 +424,7 @@ async function endConversation(reason, options = {}) {
 
 async function teardownMedia() {
   stopTimer();
-  [peerPc, openAiPc].forEach((pc) => pc?.close());
-  peerPc = null;
-  openAiPc = null;
+  mediaHandle?.teardown();
+  mediaHandle = null;
   if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
-  remoteAudio?.remove();
-  remoteAudio = null;
 }
