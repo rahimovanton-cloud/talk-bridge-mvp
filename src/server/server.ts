@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { getOpenAiRealtimeModel } from "./openai.js";
-import { createRelay, destroyRelay, feedAudio, hasRelay, setOnTranslatedAudio, activeRelaySessionIds, getRelayStats } from "./relay.js";
+import { createRelay, destroyRelay, feedAudio, hasRelay, setOnTranslatedAudio, activeRelaySessionIds, getRelayStats, getRelayEventLog } from "./relay.js";
 import { SessionStore } from "./store.js";
 import type { SessionCreateRequest, SessionRole, SessionStatus } from "./types.js";
 
@@ -27,12 +27,12 @@ const store = new SessionStore();
 const socketsBySession = new Map<string, Set<{ ws: WebSocket; role: SessionRole }>>();
 
 /* ── Server-side audio diagnostic counters ── */
-const serverAudioStats = new Map<string, { client: { wsBinaryIn: number; wsBinaryOut: number }; receiver: { wsBinaryIn: number; wsBinaryOut: number } }>();
+const serverAudioStats = new Map<string, { client: { wsBinaryIn: number; wsBinaryOut: number; outMaxAmplitude: number }; receiver: { wsBinaryIn: number; wsBinaryOut: number; outMaxAmplitude: number } }>();
 
 function getServerAudioStats(sessionId: string) {
   let s = serverAudioStats.get(sessionId);
   if (!s) {
-    s = { client: { wsBinaryIn: 0, wsBinaryOut: 0 }, receiver: { wsBinaryIn: 0, wsBinaryOut: 0 } };
+    s = { client: { wsBinaryIn: 0, wsBinaryOut: 0, outMaxAmplitude: 0 }, receiver: { wsBinaryIn: 0, wsBinaryOut: 0, outMaxAmplitude: 0 } };
     serverAudioStats.set(sessionId, s);
   }
   return s;
@@ -69,8 +69,20 @@ function sendBinaryToRole(sessionId: string, targetRole: SessionRole, data: Buff
   const sas = getServerAudioStats(sessionId);
   const roleStats = targetRole === "client" ? sas.client : sas.receiver;
   roleStats.wsBinaryOut++;
+
+  // Track max amplitude of outgoing PCM
+  if (data.length >= 2) {
+    const samples = new Int16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+    let maxAmp = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const abs = Math.abs(samples[i]);
+      if (abs > maxAmp) maxAmp = abs;
+    }
+    if (maxAmp > roleStats.outMaxAmplitude) roleStats.outMaxAmplitude = maxAmp;
+  }
+
   if (roleStats.wsBinaryOut % 100 === 0) {
-    console.log(`sendBinaryToRole [${sessionId}/${targetRole}]: sent ${roleStats.wsBinaryOut} frames, ${data.length} bytes last`);
+    console.log(`sendBinaryToRole [${sessionId}/${targetRole}]: sent ${roleStats.wsBinaryOut} frames, ${data.length} bytes last, outMaxAmp=${roleStats.outMaxAmplitude}`);
   }
 
   for (const entry of set) {
@@ -331,6 +343,10 @@ app.post("/api/realtime/bootstrap", async (req, res) => {
 });
 
 /* ── Debug endpoints ── */
+app.get("/api/debug/relay-log", (_req, res) => {
+  res.json({ events: getRelayEventLog() });
+});
+
 app.get("/api/debug/relay-stats", (_req, res) => {
   res.json({
     relayStats: getRelayStats(),

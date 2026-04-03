@@ -46,6 +46,12 @@ interface RelayStats {
   translatedCallbacks: number;
   translatedBytes: number;
   connectionState: string;
+  feedMaxAmplitude: number;
+  translatedMaxAmplitude: number;
+  onTrackFired: boolean;
+  firstRtpReceivedAt: string | null;
+  firstFeedAt: string | null;
+  destroyedAt?: string;
 }
 
 function freshStats(): RelayStats {
@@ -59,7 +65,27 @@ function freshStats(): RelayStats {
     translatedCallbacks: 0,
     translatedBytes: 0,
     connectionState: "new",
+    feedMaxAmplitude: 0,
+    translatedMaxAmplitude: 0,
+    onTrackFired: false,
+    firstRtpReceivedAt: null,
+    firstFeedAt: null,
   };
+}
+
+/* ── Event log ── */
+const relayEventLog: Array<{ t: string; msg: string }> = [];
+const RELAY_EVENT_LOG_MAX = 200;
+
+function logEvent(msg: string) {
+  if (relayEventLog.length >= RELAY_EVENT_LOG_MAX) relayEventLog.shift();
+  relayEventLog.push({ t: new Date().toISOString(), msg });
+  console.log(msg);
+}
+
+/** Expose relay event log for debug endpoint */
+export function getRelayEventLog(): Array<{ t: string; msg: string }> {
+  return relayEventLog;
 }
 
 const relayStatsMap = new Map<string, { client: RelayStats; receiver: RelayStats }>();
@@ -192,9 +218,14 @@ export async function createRelay(
   const roleStats = role === "client" ? stats.client : stats.receiver;
 
   pc.onTrack.subscribe((remoteTrack) => {
-    console.log(`relay [${sessionId}/${role}] onTrack: received remote track kind=${remoteTrack.kind}`);
+    roleStats.onTrackFired = true;
+    logEvent(`relay [${sessionId}/${role}] onTrack fired: remote track kind=${remoteTrack.kind}`);
     remoteTrack.onReceiveRtp.subscribe((rtp: RtpPacket) => {
       roleStats.rtpReceived++;
+      if (roleStats.rtpReceived === 1) {
+        roleStats.firstRtpReceivedAt = new Date().toISOString();
+        logEvent(`relay [${sessionId}/${role}] first RTP received`);
+      }
       if (roleStats.rtpReceived % 100 === 0) {
         console.log(`relay [${sessionId}/${role}] received ${roleStats.rtpReceived} translated RTP packets`);
       }
@@ -210,6 +241,15 @@ export async function createRelay(
         }
 
         const pcm48 = new Int16Array(decoded.buffer, decoded.byteOffset, decoded.byteLength / 2);
+
+        // Track translated audio max amplitude
+        let maxAmpTranslated = 0;
+        for (let i = 0; i < pcm48.length; i++) {
+          const abs = Math.abs(pcm48[i]);
+          if (abs > maxAmpTranslated) maxAmpTranslated = abs;
+        }
+        if (maxAmpTranslated > roleStats.translatedMaxAmplitude) roleStats.translatedMaxAmplitude = maxAmpTranslated;
+
         const pcm24 = resamplePcm16(pcm48, OPUS_SAMPLE_RATE, PCM_INPUT_RATE);
         const outBuf = Buffer.from(pcm24.buffer, pcm24.byteOffset, pcm24.byteLength);
 
@@ -229,12 +269,12 @@ export async function createRelay(
 
   pc.connectionStateChange.subscribe((state) => {
     roleStats.connectionState = state;
-    console.log(`relay [${sessionId}/${role}] connection: ${state}`);
+    logEvent(`relay [${sessionId}/${role}] connection: ${state}`);
   });
 
   // ICE connection state logging
   pc.iceConnectionStateChange.subscribe((state) => {
-    console.log(`relay [${sessionId}/${role}] ICE: ${state}`);
+    logEvent(`relay [${sessionId}/${role}] ICE: ${state}`);
   });
 
   // 6. SDP offer/answer with OpenAI
@@ -257,13 +297,15 @@ export async function createRelay(
   if (!sdpResponse.ok) {
     const errText = await sdpResponse.text();
     pc.close();
+    logEvent(`relay [${sessionId}/${role}] SDP exchange FAILED: ${sdpResponse.status} ${errText.slice(0, 200)}`);
     throw new Error(`OpenAI SDP exchange failed: ${sdpResponse.status} ${errText.slice(0, 300)}`);
   }
 
   const answerSdp = await sdpResponse.text();
   await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
 
-  console.log(`relay created [${sessionId}/${role}] model=${modelId}`);
+  logEvent(`relay [${sessionId}/${role}] SDP exchange success`);
+  logEvent(`relay created [${sessionId}/${role}] model=${modelId}`);
 }
 
 /**
@@ -282,6 +324,11 @@ export function feedAudio(sessionId: string, role: SessionRole, pcmChunk: Buffer
   roleStats.feedChunks++;
   roleStats.feedBytes += pcmChunk.length;
 
+  if (roleStats.feedChunks === 1) {
+    roleStats.firstFeedAt = new Date().toISOString();
+    logEvent(`relay [${sessionId}/${role}] first feedAudio call`);
+  }
+
   if (roleStats.feedChunks % 100 === 0) {
     console.log(`feedAudio [${sessionId}/${role}]: received ${roleStats.feedChunks} chunks, ${roleStats.feedBytes} bytes total, ${roleStats.opusFramesSent} opus frames sent`);
   }
@@ -294,6 +341,15 @@ export function feedAudio(sessionId: string, role: SessionRole, pcmChunk: Buffer
   while (relay.pcmBuffer.length >= frameSizeBytes) {
     const frameData = relay.pcmBuffer.subarray(0, frameSizeBytes);
     relay.pcmBuffer = relay.pcmBuffer.subarray(frameSizeBytes);
+
+    // Track incoming PCM max amplitude
+    const samples = new Int16Array(frameData.buffer, frameData.byteOffset, frameData.byteLength / 2);
+    let maxAmp = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const abs = Math.abs(samples[i]);
+      if (abs > maxAmp) maxAmp = abs;
+    }
+    if (maxAmp > roleStats.feedMaxAmplitude) roleStats.feedMaxAmplitude = maxAmp;
 
     try {
       // Resample 24kHz → 48kHz for Opus
@@ -346,15 +402,18 @@ export function destroyRelay(sessionId: string): void {
     }
   }
 
-  // Log final stats before cleanup
+  // Log final stats — preserve in relayStatsMap with destroyedAt timestamp
   const finalStats = relayStatsMap.get(sessionId);
   if (finalStats) {
-    console.log(`relay destroyed [${sessionId}] final stats:`, JSON.stringify(finalStats));
+    finalStats.client.destroyedAt = new Date().toISOString();
+    finalStats.receiver.destroyedAt = new Date().toISOString();
+    logEvent(`relay destroyed [${sessionId}] final stats: ${JSON.stringify(finalStats)}`);
+  } else {
+    logEvent(`relay destroyed [${sessionId}] (no stats)`);
   }
 
   relays.delete(sessionId);
-  relayStatsMap.delete(sessionId);
-  console.log(`relay destroyed [${sessionId}]`);
+  // NOTE: intentionally NOT deleting from relayStatsMap so stats survive for debugging
 }
 
 /**
