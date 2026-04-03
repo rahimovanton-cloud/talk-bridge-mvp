@@ -150,9 +150,26 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
       float32[i] = int16[i] / 32768;
     }
 
-    // Create AudioBuffer at source rate (24kHz) — browser handles resampling
-    const buffer = audioCtx.createBuffer(1, float32.length, SOURCE_RATE);
-    buffer.getChannelData(0).set(float32);
+    // Resample to AudioContext's native rate (e.g. 24kHz → 48kHz)
+    const ratio = audioCtx.sampleRate / SOURCE_RATE;
+    let samples = float32;
+    if (ratio !== 1) {
+      const resampledLen = Math.round(float32.length * ratio);
+      const resampled = new Float32Array(resampledLen);
+      for (let i = 0; i < resampledLen; i++) {
+        const srcIdx = i / ratio;
+        const idx = Math.floor(srcIdx);
+        const frac = srcIdx - idx;
+        const a = float32[idx] || 0;
+        const b = float32[Math.min(idx + 1, float32.length - 1)] || 0;
+        resampled[i] = a + frac * (b - a);
+      }
+      samples = resampled;
+    }
+
+    // Create AudioBuffer at context's native rate — no cross-rate issues
+    const buffer = audioCtx.createBuffer(1, samples.length, audioCtx.sampleRate);
+    buffer.getChannelData(0).set(samples);
 
     const source = audioCtx.createBufferSource();
     source.buffer = buffer;
