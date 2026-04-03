@@ -68,8 +68,8 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this._sourceRate = 24000;
-    // Ring buffer: ~200ms at device sample rate
-    this._ringSize = Math.ceil(sampleRate * 0.2);
+    // Ring buffer: ~500ms at device sample rate (generous for jitter)
+    this._ringSize = Math.ceil(sampleRate * 0.5);
     this._ring = new Float32Array(this._ringSize);
     this._writePos = 0;
     this._readPos = 0;

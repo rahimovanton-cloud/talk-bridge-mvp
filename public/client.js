@@ -3,6 +3,7 @@ import {
   bootstrapRealtime,
   connectMediaStream,
   connectSignalSocket,
+  createAudioContextNow,
   fetchJson,
   formatDuration,
   languageHint,
@@ -48,6 +49,16 @@ let micStream = null;
 let timerId = null;
 let mediaHandle = null; // { teardown, handleBinaryAudio }
 let autoStartedSessionId = null;
+let preCreatedAudioCtx = null;
+
+/* Pre-create AudioContext on first user gesture (needed for iOS) */
+function unlockClientAudio() {
+  if (preCreatedAudioCtx) return;
+  preCreatedAudioCtx = createAudioContextNow();
+  console.log("[client] AudioContext pre-created on user gesture");
+}
+document.addEventListener("touchstart", unlockClientAudio, { once: true });
+document.addEventListener("click", unlockClientAudio, { once: true });
 
 init();
 
@@ -371,7 +382,8 @@ async function startConversation() {
 
     callSubstatus.textContent = "Запускаем аудио-стриминг.";
 
-    mediaHandle = await connectMediaStream(ws, micStream);
+    mediaHandle = await connectMediaStream(ws, micStream, preCreatedAudioCtx);
+    preCreatedAudioCtx = null; // consumed
     console.log("[client] mediaHandle created successfully:", !!mediaHandle?.handleBinaryAudio, !!mediaHandle?.teardown);
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();

@@ -58,18 +58,36 @@ export async function bootstrapRealtime({ sessionId, role, speakerLanguageHint }
 }
 
 /**
+ * Pre-create an AudioContext during a user gesture (click/touch/swipe).
+ * Call this synchronously inside a gesture handler, BEFORE any await.
+ * Returns the AudioContext so it can be passed to connectMediaStream().
+ */
+export function createAudioContextNow() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  console.log(`[audio] createAudioContextNow: state=${ctx.state}, sampleRate=${ctx.sampleRate}`);
+  return ctx;
+}
+
+/**
  * Connect mic audio stream to server via WebSocket binary frames,
  * and play back translated audio received from server.
  *
- * Returns a teardown function.
+ * @param {WebSocket} ws
+ * @param {MediaStream} micStream
+ * @param {AudioContext} [audioCtx] - optional pre-created AudioContext (from user gesture)
+ * Returns { teardown, handleBinaryAudio }.
  */
-export async function connectMediaStream(ws, micStream) {
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+export async function connectMediaStream(ws, micStream, audioCtx) {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+  }
 
   // Resume context (iOS requires user gesture)
   if (audioCtx.state === "suspended") {
     await audioCtx.resume();
   }
+  console.log(`[audio] connectMediaStream: audioCtx.state=${audioCtx.state}, sampleRate=${audioCtx.sampleRate}`);
 
   // Load AudioWorklet
   await audioCtx.audioWorklet.addModule("/audio-processor.js");

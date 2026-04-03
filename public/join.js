@@ -2,6 +2,7 @@ import {
   bootstrapRealtime,
   connectMediaStream,
   connectSignalSocket,
+  createAudioContextNow,
   fetchJson,
   formatDuration,
   languageHint,
@@ -197,6 +198,10 @@ async function acceptCall() {
   if (answered) return;
   stopRinging();
 
+  // Create AudioContext NOW, synchronously during user gesture (before any await)
+  const callAudioCtx = createAudioContextNow();
+  console.log("[receiver] AudioContext created during swipe gesture");
+
   try {
     await ensureMic();
     await fetchJson("/api/session/accept", {
@@ -221,7 +226,7 @@ async function acceptCall() {
       throw new Error("Сервер не смог создать relay.");
     }
 
-    mediaHandle = await connectMediaStream(ws, micStream);
+    mediaHandle = await connectMediaStream(ws, micStream, callAudioCtx);
     console.log("[receiver] mediaHandle created successfully:", !!mediaHandle?.handleBinaryAudio, !!mediaHandle?.teardown);
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
