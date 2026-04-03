@@ -299,7 +299,7 @@ app.post("/api/realtime/bootstrap", async (req, res) => {
   const voice = role === "client" ? session.clientVoice : session.receiverVoice;
 
   try {
-    // Create server-side WebRTC relay to OpenAI
+    // Create server-side WebSocket relay to OpenAI
     await createRelay(sessionId, role, {
       apiKey,
       model: session.model,

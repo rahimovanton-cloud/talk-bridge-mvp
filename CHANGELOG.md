@@ -6,6 +6,24 @@
 
 ## 2026-04-03
 
+### (текущий) — fix: replace werift+opusscript with OpenAI WebSocket API
+
+**Суть:** `opusscript` WASM-декодер возвращал нули при декодировании Opus от OpenAI (translatedMaxAmplitude=0 во ВСЕХ сессиях). Полностью убран werift WebRTC + opusscript Opus. Сервер теперь подключается к OpenAI через обычный WebSocket (`wss://api.openai.com/v1/realtime`), отправляет/получает PCM16 24kHz в base64. Никакого Opus encode/decode.
+
+**Изменённые файлы:**
+| Файл | Что изменилось |
+|------|----------------|
+| `src/server/relay.ts` | **Полная перезапись** — WebSocket вместо werift WebRTC. `createRelay()` открывает WS к OpenAI, `feedAudio()` отправляет base64 PCM, `response.audio.delta` → PCM buffer → `onTranslatedAudio` |
+| `src/server/openai.ts` | Убрана `createRealtimeClientSecret()` (не нужна для WS API) |
+| `src/server/server.ts` | Минимально: обновлён комментарий |
+| `package.json` | Убраны `werift`, `opusscript` |
+
+**Что убрано:** werift, opusscript, RTP-пакеты, SDP exchange, Opus encode/decode, ручное конструирование RTP headers.
+
+**Что сохранено:** Вся браузерная часть (AudioWorklet mic capture, AudioBufferSourceNode playback, WS binary frames browser↔server).
+
+---
+
 ### `520155e` — feat: replace P2P browser relay with server-side WebRTC relay
 
 **Суть:** Полная замена архитектуры. Убран P2P-канал между браузерами, сервер теперь сам подключается к OpenAI Realtime через WebRTC (werift) и пересылает переведённое аудио другому браузеру через WS binary.
