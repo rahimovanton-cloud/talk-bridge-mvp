@@ -124,6 +124,19 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
     playbackChunksReceived++;
     if (playbackChunksReceived <= 3 || playbackChunksReceived % 50 === 0) {
       console.log(`playback: chunk #${playbackChunksReceived}, ${arrayBuffer.byteLength} bytes, ctxState=${audioCtx.state}, currentTime=${audioCtx.currentTime.toFixed(3)}`);
+      // Report to server for remote debugging
+      try {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "debug.playback",
+            chunks: playbackChunksReceived,
+            bytes: arrayBuffer.byteLength,
+            ctxState: audioCtx.state,
+            ctxTime: audioCtx.currentTime,
+            sampleRate: audioCtx.sampleRate,
+          }));
+        }
+      } catch {}
     }
 
     if (audioCtx.state === "suspended") {

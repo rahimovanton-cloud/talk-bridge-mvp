@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { getOpenAiRealtimeModel } from "./openai.js";
-import { createRelay, destroyRelay, feedAudio, hasRelay, setOnTranslatedAudio, activeRelaySessionIds, getRelayStats, getRelayEventLog } from "./relay.js";
+import { createRelay, destroyRelay, feedAudio, hasRelay, setOnTranslatedAudio, activeRelaySessionIds, getRelayStats, getRelayEventLog, logEvent } from "./relay.js";
 import { SessionStore } from "./store.js";
 import type { SessionCreateRequest, SessionRole, SessionStatus } from "./types.js";
 
@@ -421,9 +421,7 @@ wss.on("connection", (ws, req) => {
       }
 
       if (message.type === "debug.playback") {
-        const sas = getServerAudioStats(sessionId);
-        const roleStats = role === "client" ? sas.client : sas.receiver;
-        console.log(`[debug.playback] ${sessionId}/${role}: binaryReceived=${message.binaryReceived}, playbackState=${message.playbackState}, serverSent=${roleStats.wsBinaryOut}`);
+        logEvent(`[browser.playback] ${sessionId}/${role}: chunks=${message.chunks}, bytes=${message.bytes}, ctxState=${message.ctxState}, ctxTime=${message.ctxTime}, sampleRate=${message.sampleRate}`);
         return;
       }
     } catch (error) {

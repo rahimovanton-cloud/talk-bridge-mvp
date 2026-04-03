@@ -61,7 +61,7 @@ function freshStats(): RelayStats {
 const relayEventLog: Array<{ t: string; msg: string }> = [];
 const RELAY_EVENT_LOG_MAX = 200;
 
-function logEvent(msg: string) {
+export function logEvent(msg: string) {
   if (relayEventLog.length >= RELAY_EVENT_LOG_MAX) relayEventLog.shift();
   relayEventLog.push({ t: new Date().toISOString(), msg });
   console.log(msg);
