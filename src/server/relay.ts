@@ -189,7 +189,7 @@ export async function createRelay(
                 type: "server_vad",
                 silence_duration_ms: 800,
                 prefix_padding_ms: 400,
-                threshold: 0.6,
+                threshold: 0.4,
               },
             },
           }));
@@ -303,6 +303,9 @@ export function feedAudio(sessionId: string, role: SessionRole, pcmChunk: Buffer
 
   const relay = role === "client" ? pair.clientRelay : pair.receiverRelay;
   if (!relay || !relay.sessionReady || relay.ws.readyState !== WebSocket.OPEN) return;
+
+  // Skip invalid PCM16 chunks (must be even byte count, at least 2 bytes)
+  if (pcmChunk.length < 2 || pcmChunk.length % 2 !== 0) return;
 
   const stats = getStatsForSession(sessionId);
   const roleStats = role === "client" ? stats.client : stats.receiver;

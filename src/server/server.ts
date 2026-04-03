@@ -398,7 +398,7 @@ wss.on("connection", (ws, req) => {
 
   ws.on("message", (raw, isBinary) => {
     // Binary frame = PCM audio from browser mic → feed to relay
-    if (isBinary || Buffer.isBuffer(raw)) {
+    if (isBinary) {
       const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
       const sas = getServerAudioStats(sessionId);
       const roleStats = role === "client" ? sas.client : sas.receiver;
