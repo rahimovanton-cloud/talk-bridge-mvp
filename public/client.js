@@ -268,11 +268,19 @@ function connectSocket() {
     role: "client",
     onBinary: (arrayBuffer) => {
       // Translated audio from server → playback
-      if (!window._clientFirstBinaryLogged) {
-        window._clientFirstBinaryLogged = true;
-        console.log(`[client] first binary audio received: ${arrayBuffer.byteLength} bytes, mediaHandle=${!!mediaHandle}`);
+      window._clientBinaryReceived = (window._clientBinaryReceived || 0) + 1;
+      const count = window._clientBinaryReceived;
+      if (count <= 3 || count % 20 === 0) {
+        console.log(`[client] binary audio #${count}: ${arrayBuffer.byteLength} bytes, mediaHandle=${!!mediaHandle}`);
       }
-      mediaHandle?.handleBinaryAudio(arrayBuffer);
+      if (mediaHandle?.handleBinaryAudio) {
+        mediaHandle.handleBinaryAudio(arrayBuffer);
+      } else {
+        if (!window._clientMissedLogged) {
+          window._clientMissedLogged = true;
+          console.warn(`[client] binary audio DROPPED — mediaHandle not ready`);
+        }
+      }
     },
     onMessage: async (msg) => {
       console.log("ws msg:", msg.type, msg);
@@ -386,11 +394,32 @@ async function startConversation() {
     preCreatedAudioCtx = null; // consumed
     console.log("[client] mediaHandle created successfully:", !!mediaHandle?.handleBinaryAudio, !!mediaHandle?.teardown);
     ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
+
+    // Periodic playback diagnostics → server
+    window._clientDiagInterval = setInterval(() => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "debug.playback",
+          binaryReceived: window._clientBinaryReceived || 0,
+          playbackState: mediaHandle ? "active" : "null",
+        }));
+      }
+    }, 5000);
+
     startTimer();
     callStatus.textContent = "Разговор";
     callSubstatus.textContent = "Перевод идёт.";
     callTimer.classList.remove("hidden");
     clientEndSwipe.classList.remove("hidden");
+
+    // Visible diagnostic counter
+    window._clientDiagEl = document.createElement("div");
+    window._clientDiagEl.style.cssText = "position:fixed;bottom:4px;left:4px;background:rgba(0,0,0,0.7);color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;z-index:9999;pointer-events:none";
+    document.body.appendChild(window._clientDiagEl);
+    window._clientDiagTimer = setInterval(() => {
+      const recv = window._clientBinaryReceived || 0;
+      window._clientDiagEl.textContent = `IN:${recv} HBA:${mediaHandle ? "Y" : "N"}`;
+    }, 500);
   } catch (error) {
     callStatus.textContent = "Ошибка";
     callSubstatus.textContent = error.message || "Не удалось подключиться.";

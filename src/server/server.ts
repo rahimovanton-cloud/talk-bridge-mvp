@@ -419,6 +419,13 @@ wss.on("connection", (ws, req) => {
         broadcast(sessionId, { type: "session.updated", session: publicSessionView(sessionId) });
         return;
       }
+
+      if (message.type === "debug.playback") {
+        const sas = getServerAudioStats(sessionId);
+        const roleStats = role === "client" ? sas.client : sas.receiver;
+        console.log(`[debug.playback] ${sessionId}/${role}: binaryReceived=${message.binaryReceived}, playbackState=${message.playbackState}, serverSent=${roleStats.wsBinaryOut}`);
+        return;
+      }
     } catch (error) {
       console.error("ws_message_error", error);
     }
