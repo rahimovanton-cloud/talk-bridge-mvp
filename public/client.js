@@ -377,7 +377,7 @@ async function startConversation() {
     mediaHandle = await connectMediaStream(ws, micStream, preCreatedAudioCtx);
     preCreatedAudioCtx = null; // consumed
     console.log("[client] mediaHandle created, playback wired directly to WS");
-    ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
+    if (ws) ws.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
     callStatus.textContent = "Разговор";
     callSubstatus.textContent = "Перевод идёт.";
@@ -400,7 +400,7 @@ function startTimer() {
   callTimer.classList.remove("hidden");
   clientEndSwipe.classList.remove("hidden");
   timerId = setInterval(() => {
-    callTimer.textContent = formatDuration(currentSession?.startedAt || new Date().toISOString());
+    callTimer.textContent = formatDuration((currentSession && currentSession.startedAt) || new Date().toISOString());
   }, 250);
 }
 
@@ -433,7 +433,7 @@ async function endConversation(reason, options = {}) {
 
 async function teardownMedia() {
   stopTimer();
-  mediaHandle?.teardown();
+  if (mediaHandle) mediaHandle.teardown();
   mediaHandle = null;
   if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
 }

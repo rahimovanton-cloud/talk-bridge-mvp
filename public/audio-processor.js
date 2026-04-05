@@ -18,7 +18,7 @@ class MicCaptureProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs) {
-    const input = inputs[0]?.[0];
+    const input = inputs[0] && inputs[0][0];
     if (!input || input.length === 0) return true;
 
     this._framesProcessed++;
@@ -43,8 +43,8 @@ class MicCaptureProcessor extends AudioWorkletProcessor {
         const srcIdx = i * ratio;
         const idx = Math.floor(srcIdx);
         const frac = srcIdx - idx;
-        const a = chunk[idx] ?? 0;
-        const b = chunk[Math.min(idx + 1, chunk.length - 1)] ?? 0;
+        const a = (chunk[idx] || 0);
+        const b = (chunk[Math.min(idx + 1, chunk.length - 1)] || 0);
         const val = a + frac * (b - a);
         resampled[i] = Math.max(-32768, Math.min(32767, Math.round(val * 32767)));
       }
@@ -89,8 +89,8 @@ class PlaybackProcessor extends AudioWorkletProcessor {
         const srcIdx = i * ratio;
         const idx = Math.floor(srcIdx);
         const frac = srcIdx - idx;
-        const a = (int16[idx] ?? 0) / 32768;
-        const b = (int16[Math.min(idx + 1, int16.length - 1)] ?? 0) / 32768;
+        const a = (int16[idx] || 0) / 32768;
+        const b = (int16[Math.min(idx + 1, int16.length - 1)] || 0) / 32768;
         const val = a + frac * (b - a);
 
         this._ring[this._writePos] = val;
@@ -106,7 +106,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   }
 
   process(_inputs, outputs) {
-    const output = outputs[0]?.[0];
+    const output = outputs[0] && outputs[0][0];
     if (!output) return true;
 
     this._framesOutput++;

@@ -150,7 +150,7 @@ function stopRinging() {
   clearInterval(ringerTimer);
   document.removeEventListener("touchstart", unlockAndRing);
   document.removeEventListener("click", unlockAndRing);
-  ringerCtx?.close?.().catch(function(){});
+  if (ringerCtx && ringerCtx.close) ringerCtx.close().catch(function(){});
   ringerCtx = null;
 }
 
@@ -230,7 +230,7 @@ async function acceptCall() {
 
     mediaHandle = await connectMediaStream(ws, micStream, callAudioCtx);
     console.log("[receiver] mediaHandle created, playback wired directly to WS");
-    ws?.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
+    if (ws) ws.send(JSON.stringify({ type: "participant.state", patch: { micGranted: true, realtimeConnected: true } }));
     startTimer();
     receiverCallStatus.textContent = "Разговор";
     receiverBanner.textContent = "Перевод активен.";
@@ -255,7 +255,7 @@ async function ensureMic() {
 function startTimer() {
   stopTimer();
   timerId = setInterval(() => {
-    receiverCallTimer.textContent = formatDuration(currentSession?.startedAt || new Date().toISOString());
+    receiverCallTimer.textContent = formatDuration((currentSession && currentSession.startedAt) || new Date().toISOString());
   }, 250);
 }
 
@@ -279,7 +279,7 @@ async function endConversation(reason) {
 
 async function teardownMedia() {
   stopTimer();
-  mediaHandle?.teardown();
+  if (mediaHandle) mediaHandle.teardown();
   mediaHandle = null;
   if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
 }

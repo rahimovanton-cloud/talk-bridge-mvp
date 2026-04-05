@@ -25,7 +25,7 @@ export function connectSignalSocket({ sessionId, role, onMessage, onBinary }) {
   ws.addEventListener("message", (event) => {
     if (event.data instanceof ArrayBuffer) {
       // Binary frame = translated PCM audio from server
-      onBinary?.(event.data);
+      if (onBinary) onBinary(event.data);
       return;
     }
     queue = queue.then(() => onMessage(JSON.parse(event.data))).catch((err) => console.error("ws handler error:", err));
@@ -37,7 +37,7 @@ export async function fetchJson(url, options) {
   const response = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
-      ...(options?.headers || {}),
+      ...((options && options.headers) || {}),
     },
     ...options,
   });
