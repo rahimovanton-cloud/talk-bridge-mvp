@@ -28,18 +28,19 @@ let ringerCtx = null;
 let ringerTimer = null;
 let answered = false;
 
-/* ── Audio context — create eagerly, resume on gesture ── */
-try {
-  ringerCtx = new (window.AudioContext || window.webkitAudioContext)();
-} catch { /* no audio support */ }
-
-function unlockAudio() {
-  if (ringerCtx && ringerCtx.state === "suspended") {
-    ringerCtx.resume().catch(() => {});
+/* ── Audio: unlock on ANY touch/click, then ring ── */
+function unlockAndRing() {
+  if (!ringerCtx) {
+    try {
+      ringerCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch { return; }
+  }
+  if (ringerCtx.state === "suspended") {
+    ringerCtx.resume().catch(function(){});
   }
 }
-document.addEventListener("touchstart", unlockAudio, { once: true });
-document.addEventListener("click", unlockAudio, { once: true });
+document.addEventListener("touchstart", unlockAndRing);
+document.addEventListener("click", unlockAndRing);
 
 init();
 
@@ -74,7 +75,7 @@ function initSwipe(railId, thumbId, onComplete) {
   let startX = 0;
   let pos = 0;
 
-  function maxX() { return rail.clientWidth - thumb.clientWidth - 12; }
+  function maxX() { return rail.clientWidth - thumb.clientWidth - 8; }
   function paint(x) {
     pos = Math.max(0, Math.min(maxX(), x));
     thumb.style.transform = `translateX(${pos}px)`;
@@ -113,21 +114,23 @@ function startRinging() {
 
   function burst() {
     if (answered || !ringerCtx || ringerCtx.state === "closed") return;
-    if (ringerCtx.state === "suspended") ringerCtx.resume().catch(() => {});
-    if (ringerCtx.state !== "running") return; // skip sound if still suspended
-    const t = ringerCtx.currentTime;
-    [0, 0.15].forEach((off) => {
-      const o = ringerCtx.createOscillator();
-      const g = ringerCtx.createGain();
-      o.type = "sine";
-      o.frequency.value = 880;
-      g.gain.setValueAtTime(0.0001, t + off);
-      g.gain.exponentialRampToValueAtTime(0.08, t + off + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.12);
-      o.connect(g).connect(ringerCtx.destination);
-      o.start(t + off);
-      o.stop(t + off + 0.13);
-    });
+    // Не проверяем state синхронно — просто пробуем играть
+    // На iOS звук пойдёт после первого тапа (unlockAndRing)
+    try {
+      var t = ringerCtx.currentTime;
+      [0, 0.15].forEach(function(off) {
+        var o = ringerCtx.createOscillator();
+        var g = ringerCtx.createGain();
+        o.type = "sine";
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, t + off);
+        g.gain.exponentialRampToValueAtTime(0.08, t + off + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.12);
+        o.connect(g).connect(ringerCtx.destination);
+        o.start(t + off);
+        o.stop(t + off + 0.13);
+      });
+    } catch(e) { /* ignore on suspended context */ }
   }
 
   burst();
@@ -145,7 +148,9 @@ function stopRinging() {
   answered = true;
   incomingInfo.classList.remove("shaking");
   clearInterval(ringerTimer);
-  ringerCtx?.close?.().catch(() => {});
+  document.removeEventListener("touchstart", unlockAndRing);
+  document.removeEventListener("click", unlockAndRing);
+  ringerCtx?.close?.().catch(function(){});
   ringerCtx = null;
 }
 

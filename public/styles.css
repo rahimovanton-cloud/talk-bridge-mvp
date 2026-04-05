@@ -21,7 +21,7 @@ button { border: 0; cursor: pointer; }
 
 /* ============================================
    RECEIVER (собеседник) — fullscreen photo bg
-   Полностью резиновая вёрстка: vh/vw/%, без px-констант
+   Простой CSS, совместимый с iOS 12+
    ============================================ */
 
 .receiver-body { background: #000; }
@@ -40,7 +40,7 @@ button { border: 0; cursor: pointer; }
 
 .receiver-bg-overlay {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: linear-gradient(
     180deg,
     rgba(0,0,0,0.1) 0%,
@@ -57,113 +57,118 @@ button { border: 0; cursor: pointer; }
 }
 
 .receiver-view {
+  display: -webkit-flex;
   display: flex;
+  -webkit-flex-direction: column;
   flex-direction: column;
+  -webkit-justify-content: flex-end;
   justify-content: flex-end;
-  height: 100%;
-  height: 100dvh;
   position: absolute;
   top: 0; right: 0; bottom: 0; left: 0;
-  overflow: hidden;
 }
 
-/* Пустая распорка — оставляем для совместимости с HTML, но flex-end делает работу */
 .rv-top { display: none; }
 
 .incoming-info {
   text-align: center;
-  padding: 0 5vw 2vh;
-  flex-shrink: 0;
+  padding: 0 20px 12px;
 }
 
 .incoming-name {
-  font-size: clamp(1.5rem, 7vw, 3rem);
+  font-size: 32px;
   font-weight: 700;
   letter-spacing: -0.03em;
-  text-shadow: 0 0.3vh 3vh rgba(0,0,0,0.6);
+  text-shadow: 0 2px 16px rgba(0,0,0,0.6);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 90vw;
-  margin: 0 auto;
 }
 
 .incoming-copy {
   color: rgba(255,255,255,0.7);
-  font-size: clamp(0.8rem, 3.5vw, 1.1rem);
-  margin-top: 0.8vh;
-  text-shadow: 0 1px 0.8vh rgba(0,0,0,0.5);
+  font-size: 15px;
+  margin-top: 4px;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.5);
 }
 
 .rv-bottom {
-  padding: 0 5vw calc(6vh + env(safe-area-inset-bottom, 0px));
-  flex-shrink: 0;
+  padding: 0 16px 40px;
+  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
 }
 
 .rv-center {
+  -webkit-flex: 1;
   flex: 1;
+  display: -webkit-flex;
   display: flex;
+  -webkit-flex-direction: column;
   flex-direction: column;
+  -webkit-align-items: center;
   align-items: center;
+  -webkit-justify-content: center;
   justify-content: center;
   text-align: center;
-  gap: 1.5vh;
-  padding: 0 5vw;
+  gap: 12px;
+  padding: 0 20px;
   min-height: 0;
 }
 
 .rv-status {
-  font-size: clamp(1.4rem, 6vw, 2.25rem);
+  font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.03em;
-  text-shadow: 0 0.3vh 2.5vh rgba(0,0,0,0.5);
+  text-shadow: 0 2px 16px rgba(0,0,0,0.5);
 }
 
 .rv-timer {
   font-family: var(--display);
-  font-size: clamp(2.5rem, 14vw, 6rem);
+  font-size: 64px;
   line-height: 0.95;
   letter-spacing: -0.06em;
-  text-shadow: 0 0.5vh 3.5vh rgba(0,0,0,0.4);
+  text-shadow: 0 4px 24px rgba(0,0,0,0.4);
 }
 
 .rv-substatus {
   color: rgba(255,255,255,0.6);
-  font-size: clamp(0.75rem, 3vw, 0.95rem);
+  font-size: 14px;
 }
 
 /* end screen */
 .end-icon {
-  width: min(10vh, 80px);
-  height: min(10vh, 80px);
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   background: rgba(50, 212, 111, 0.2);
-  display: grid;
-  place-items: center;
-  font-size: clamp(1.4rem, 5vw, 2.25rem);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  font-size: 28px;
   color: var(--green);
-  margin-bottom: 2vh;
+  margin-bottom: 16px;
 }
 
 .end-app-link {
   display: inline-block;
-  margin-top: 2vh;
-  padding: 1.8vh 8vw;
+  margin-top: 16px;
+  padding: 14px 32px;
   border-radius: 999px;
   background: rgba(255,255,255,0.12);
   color: white;
   text-decoration: none;
   font-weight: 600;
-  font-size: clamp(0.8rem, 3.5vw, 1rem);
+  font-size: 15px;
 }
 
 /* shake animation */
 @keyframes shake-pulse {
   0%   { transform: translateX(0); }
-  10%  { transform: translateX(-1vw); }
-  20%  { transform: translateX(0.8vw); }
-  30%  { transform: translateX(-0.6vw); }
-  40%  { transform: translateX(0.4vw); }
+  10%  { transform: translateX(-4px); }
+  20%  { transform: translateX(3px); }
+  30%  { transform: translateX(-2px); }
+  40%  { transform: translateX(1px); }
   50%  { transform: translateX(0); }
   100% { transform: translateX(0); }
 }
@@ -174,17 +179,19 @@ button { border: 0; cursor: pointer; }
 
 /* ============================================
    SWIPE RAIL (shared — receiver & client)
-   Высота и thumb — пропорциональны экрану
+   Простые px-размеры, никаких clamp/calc
    ============================================ */
 
 .swipe-rail {
   position: relative;
   width: 100%;
-  height: clamp(3rem, 9vh, 4.5rem);
+  height: 64px;
   border-radius: 999px;
   background: rgba(255,255,255,0.12);
-  overflow: hidden;
+  overflow: visible;
+  display: -webkit-flex;
   display: flex;
+  -webkit-align-items: center;
   align-items: center;
   padding: 4px;
 }
@@ -194,17 +201,18 @@ button { border: 0; cursor: pointer; }
   top: 4px;
   bottom: 4px;
   left: 4px;
-  width: 0;
+  width: 56px;
   border-radius: 999px;
   background: rgba(255,255,255,0.08);
   transition: width 0.05s linear;
+  pointer-events: none;
 }
 
-.swipe-rail:has(.answer-color) .swipe-rail-fill {
+.swipe-rail-fill.fill-green {
   background: rgba(50, 212, 111, 0.4);
 }
 
-.swipe-rail:has(.end-color) .swipe-rail-fill {
+.swipe-rail-fill.fill-red {
   background: rgba(255, 69, 58, 0.4);
 }
 
@@ -213,25 +221,29 @@ button { border: 0; cursor: pointer; }
   width: 100%;
   text-align: center;
   color: rgba(255,255,255,0.5);
-  font-size: clamp(0.7rem, 3vw, 0.95rem);
+  font-size: 14px;
   pointer-events: none;
 }
 
 .swipe-rail-thumb {
   position: relative;
   z-index: 2;
-  /* Квадрат, вписанный в рельсу с зазором */
-  width: calc(clamp(3rem, 9vh, 4.5rem) - 8px);
-  height: calc(clamp(3rem, 9vh, 4.5rem) - 8px);
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
   color: white;
-  font-size: clamp(1.1rem, 4vw, 1.6rem);
+  font-size: 24px;
+  -webkit-flex-shrink: 0;
   flex-shrink: 0;
   touch-action: none;
+  -webkit-user-select: none;
   user-select: none;
-  cursor: grab;
 }
 
 .answer-color { background: var(--green); }
