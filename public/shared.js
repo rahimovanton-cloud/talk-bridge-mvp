@@ -83,109 +83,140 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
   }
 
-  // Resume context (iOS requires user gesture)
   if (audioCtx.state === "suspended") {
     await audioCtx.resume();
   }
-  console.log(`[audio] connectMediaStream: audioCtx.state=${audioCtx.state}, sampleRate=${audioCtx.sampleRate}`);
+  console.log("[audio] connectMediaStream: state=" + audioCtx.state + " rate=" + audioCtx.sampleRate);
 
-  // Load AudioWorklet
-  await audioCtx.audioWorklet.addModule("/audio-processor.js");
+  var micSource = audioCtx.createMediaStreamSource(micStream);
+  var captureCleanup;
+  var micChunksSent = 0;
+  var TARGET_RATE = 24000;
+  var CHUNK_SAMPLES = 480; // 20ms at 24kHz
 
-  // ── Mic capture: mic → AudioWorklet → WS binary ──
-  const micSource = audioCtx.createMediaStreamSource(micStream);
-  const captureNode = new AudioWorkletNode(audioCtx, "mic-capture-processor");
-
-  let micChunksSent = 0;
-  captureNode.port.onmessage = (e) => {
-    if (e.data && e.data.type === "stats") {
-      console.log("[MicCapture stats]", e.data);
-      return;
-    }
+  function sendPcm(int16buf) {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(e.data); // ArrayBuffer of Int16 PCM 24kHz
+      ws.send(int16buf);
       micChunksSent++;
       if (micChunksSent % 50 === 0) {
-        console.log(`mic: sent ${micChunksSent} chunks via WS`);
+        console.log("mic: sent " + micChunksSent + " chunks");
       }
     }
-  };
+  }
 
-  micSource.connect(captureNode);
-  // captureNode does NOT connect to destination (no local playback of mic)
+  // ── Mic capture: AudioWorklet if available, ScriptProcessor fallback ──
+  if (audioCtx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
+    await audioCtx.audioWorklet.addModule("/audio-processor.js");
+    var captureNode = new AudioWorkletNode(audioCtx, "mic-capture-processor");
+    captureNode.port.onmessage = function(e) {
+      if (e.data && e.data.type === "stats") return;
+      sendPcm(e.data);
+    };
+    micSource.connect(captureNode);
+    captureCleanup = function() {
+      try { micSource.disconnect(); } catch(ex) {}
+      try { captureNode.disconnect(); } catch(ex) {}
+    };
+  } else {
+    // ScriptProcessorNode fallback (deprecated but works on old iOS)
+    console.log("[audio] using ScriptProcessor fallback");
+    var bufSize = 4096;
+    var scriptNode = audioCtx.createScriptProcessor(bufSize, 1, 1);
+    var captureBuffer = new Float32Array(0);
+    var ratio = audioCtx.sampleRate / TARGET_RATE;
+
+    scriptNode.onaudioprocess = function(e) {
+      var input = e.inputBuffer.getChannelData(0);
+      // silence output so mic doesn't echo
+      var output = e.outputBuffer.getChannelData(0);
+      for (var k = 0; k < output.length; k++) output[k] = 0;
+
+      // accumulate
+      var merged = new Float32Array(captureBuffer.length + input.length);
+      merged.set(captureBuffer);
+      merged.set(input, captureBuffer.length);
+      captureBuffer = merged;
+
+      var samplesNeeded = Math.ceil(CHUNK_SAMPLES * ratio);
+      while (captureBuffer.length >= samplesNeeded) {
+        var chunk = captureBuffer.subarray(0, samplesNeeded);
+        captureBuffer = captureBuffer.subarray(samplesNeeded);
+        // linear resample to 24kHz Int16
+        var resampled = new Int16Array(CHUNK_SAMPLES);
+        for (var i = 0; i < CHUNK_SAMPLES; i++) {
+          var srcIdx = i * ratio;
+          var idx = Math.floor(srcIdx);
+          var frac = srcIdx - idx;
+          var a = chunk[idx] || 0;
+          var b = chunk[Math.min(idx + 1, chunk.length - 1)] || 0;
+          var val = a + frac * (b - a);
+          resampled[i] = Math.max(-32768, Math.min(32767, Math.round(val * 32767)));
+        }
+        sendPcm(resampled.buffer);
+      }
+    };
+
+    micSource.connect(scriptNode);
+    scriptNode.connect(audioCtx.destination); // must connect to destination to keep it alive
+    captureCleanup = function() {
+      try { micSource.disconnect(); } catch(ex) {}
+      try { scriptNode.disconnect(); } catch(ex) {}
+    };
+  }
 
   // ── Playback: WS binary → AudioBufferSourceNode → speaker ──
-  // Listens directly on the WS for binary frames — no external wiring needed.
-  let playbackChunksReceived = 0;
-  let nextPlayTime = 0;
-  const SOURCE_RATE = 24000;
+  var playbackChunksReceived = 0;
+  var nextPlayTime = 0;
+  var SOURCE_RATE = 24000;
 
   function handleBinaryAudio(arrayBuffer) {
     playbackChunksReceived++;
     if (playbackChunksReceived <= 3 || playbackChunksReceived % 50 === 0) {
-      console.log(`playback: chunk #${playbackChunksReceived}, ${arrayBuffer.byteLength} bytes, ctxState=${audioCtx.state}, currentTime=${audioCtx.currentTime.toFixed(3)}`);
-      // Report to server for remote debugging
-      try {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: "debug.playback",
-            chunks: playbackChunksReceived,
-            bytes: arrayBuffer.byteLength,
-            ctxState: audioCtx.state,
-            ctxTime: audioCtx.currentTime,
-            sampleRate: audioCtx.sampleRate,
-          }));
-        }
-      } catch {}
+      console.log("playback: #" + playbackChunksReceived + " " + arrayBuffer.byteLength + "B");
     }
 
     if (audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {});
+      audioCtx.resume().catch(function(){});
     }
 
-    // Convert Int16 PCM 24kHz → Float32
-    const int16 = new Int16Array(arrayBuffer);
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) {
+    var int16 = new Int16Array(arrayBuffer);
+    var float32 = new Float32Array(int16.length);
+    for (var i = 0; i < int16.length; i++) {
       float32[i] = int16[i] / 32768;
     }
 
-    // Resample to AudioContext's native rate (e.g. 24kHz → 48kHz)
-    const ratio = audioCtx.sampleRate / SOURCE_RATE;
-    let samples = float32;
+    var ratio = audioCtx.sampleRate / SOURCE_RATE;
+    var samples = float32;
     if (ratio !== 1) {
-      const resampledLen = Math.round(float32.length * ratio);
-      const resampled = new Float32Array(resampledLen);
-      for (let i = 0; i < resampledLen; i++) {
-        const srcIdx = i / ratio;
-        const idx = Math.floor(srcIdx);
-        const frac = srcIdx - idx;
-        const a = float32[idx] || 0;
-        const b = float32[Math.min(idx + 1, float32.length - 1)] || 0;
-        resampled[i] = a + frac * (b - a);
+      var resampledLen = Math.round(float32.length * ratio);
+      var resampled = new Float32Array(resampledLen);
+      for (var j = 0; j < resampledLen; j++) {
+        var srcIdx = j / ratio;
+        var idx = Math.floor(srcIdx);
+        var frac = srcIdx - idx;
+        var a = float32[idx] || 0;
+        var b = float32[Math.min(idx + 1, float32.length - 1)] || 0;
+        resampled[j] = a + frac * (b - a);
       }
       samples = resampled;
     }
 
-    // Create AudioBuffer at context's native rate — no cross-rate issues
-    const buffer = audioCtx.createBuffer(1, samples.length, audioCtx.sampleRate);
+    var buffer = audioCtx.createBuffer(1, samples.length, audioCtx.sampleRate);
     buffer.getChannelData(0).set(samples);
 
-    const source = audioCtx.createBufferSource();
+    var source = audioCtx.createBufferSource();
     source.buffer = buffer;
     source.connect(audioCtx.destination);
 
-    // Schedule seamless playback
-    const now = audioCtx.currentTime;
+    var now = audioCtx.currentTime;
     if (nextPlayTime < now) {
-      nextPlayTime = now + 0.02; // small lead-in to avoid click
+      nextPlayTime = now + 0.02;
     }
     source.start(nextPlayTime);
     nextPlayTime += buffer.duration;
   }
 
-  // Listen for binary frames directly on the WS
-  const binaryListener = (event) => {
+  var binaryListener = function(event) {
     if (event.data instanceof ArrayBuffer) {
       handleBinaryAudio(event.data);
     }
@@ -194,10 +225,9 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
 
   function teardown() {
     ws.removeEventListener("message", binaryListener);
-    try { micSource.disconnect(); } catch {}
-    try { captureNode.disconnect(); } catch {}
-    try { audioCtx.close(); } catch {}
+    if (captureCleanup) captureCleanup();
+    try { audioCtx.close(); } catch(ex) {}
   }
 
-  return { teardown };
+  return { teardown: teardown };
 }
