@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 
 enum CallState: Equatable {
+    case waitingForLink
     case loading
     case incoming
     case connecting
@@ -11,7 +12,7 @@ enum CallState: Equatable {
 
     static func == (lhs: CallState, rhs: CallState) -> Bool {
         switch (lhs, rhs) {
-        case (.loading, .loading), (.incoming, .incoming), (.connecting, .connecting),
+        case (.waitingForLink, .waitingForLink), (.loading, .loading), (.incoming, .incoming), (.connecting, .connecting),
              (.active, .active), (.ended, .ended):
             return true
         case (.error(let a), .error(let b)):
@@ -23,7 +24,7 @@ enum CallState: Equatable {
 }
 
 class CallManager: ObservableObject, WebSocketManagerDelegate, AudioManagerDelegate {
-    @Published var state: CallState = .loading
+    @Published var state: CallState = .waitingForLink
     @Published var session: SessionData?
     @Published var elapsedSeconds: Int = 0
 
@@ -33,6 +34,17 @@ class CallManager: ObservableObject, WebSocketManagerDelegate, AudioManagerDeleg
 
     var languageHint: String {
         Locale.current.language.languageCode?.identifier ?? "en"
+    }
+
+    /// Extract token from a full URL or bare token string
+    func loadFromURL(_ urlString: String) {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Could be full URL like https://.../join/TOKEN or just TOKEN
+        if let url = URL(string: trimmed), let last = url.pathComponents.last, last != "join", !last.isEmpty {
+            loadInvite(token: last)
+        } else if !trimmed.isEmpty {
+            loadInvite(token: trimmed)
+        }
     }
 
     func loadInvite(token: String) {

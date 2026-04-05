@@ -62,8 +62,8 @@ class AudioManager {
                 }
 
                 // Convert to Data and send
-                let data = resampled.withUnsafeBufferPointer { ptr in
-                    Data(buffer: UnsafeRawBufferPointer(UnsafeBufferPointer(start: ptr.baseAddress, count: ptr.count)))
+                let data = resampled.withUnsafeBytes { rawBuf in
+                    Data(rawBuf)
                 }
                 self.delegate?.didCapturePCM(data)
             }

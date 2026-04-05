@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.talkbridge.app",
+  appId: "com.rahimovanton.talkbridge",
   appName: "Talk Bridge",
   webDir: "public",
   server: {

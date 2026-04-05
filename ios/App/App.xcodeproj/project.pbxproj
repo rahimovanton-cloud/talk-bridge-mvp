@@ -11,11 +11,31 @@
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
+		AA000001AABB000000000001 /* AudioRoutePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AABB000000000002 /* AudioRoutePlugin.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		BB00000100000001 /* TalkBridgeClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000001 /* TalkBridgeClipApp.swift */; };
+		BB00000100000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000002 /* ContentView.swift */; };
+		BB00000100000003 /* IncomingCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000003 /* IncomingCallView.swift */; };
+		BB00000100000004 /* ActiveCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000004 /* ActiveCallView.swift */; };
+		BB00000100000005 /* EndedCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000005 /* EndedCallView.swift */; };
+		BB00000100000006 /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000006 /* AudioManager.swift */; };
+		BB00000100000007 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000007 /* WebSocketManager.swift */; };
+		BB00000100000008 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000008 /* APIClient.swift */; };
+		BB00000100000009 /* CallManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000200000009 /* CallManager.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BB00000300000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BB00000400000001;
+			remoteInfo = TalkBridgeClip;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -27,7 +47,19 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		AA000001AABB000000000002 /* AudioRoutePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRoutePlugin.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		BB00000200000001 /* TalkBridgeClipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalkBridgeClipApp.swift; sourceTree = "<group>"; };
+		BB00000200000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BB00000200000003 /* IncomingCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingCallView.swift; sourceTree = "<group>"; };
+		BB00000200000004 /* ActiveCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCallView.swift; sourceTree = "<group>"; };
+		BB00000200000005 /* EndedCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndedCallView.swift; sourceTree = "<group>"; };
+		BB00000200000006 /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
+		BB00000200000007 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
+		BB00000200000008 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		BB00000200000009 /* CallManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallManager.swift; sourceTree = "<group>"; };
+		BB0000020000000A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		BB00000500000001 /* TalkBridgeClip.app */ = {isa = PBXFileReference; explicitFileType = "com.apple.application-bundle"; includeInIndex = 0; path = TalkBridgeClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -39,6 +71,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BB00000600000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -47,6 +86,7 @@
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+				BB00000700000001 /* TalkBridgeClip */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -55,6 +95,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				BB00000500000001 /* TalkBridgeClip.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -64,6 +105,7 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				AA000001AABB000000000002 /* AudioRoutePlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -72,6 +114,23 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		BB00000700000001 /* TalkBridgeClip */ = {
+			isa = PBXGroup;
+			children = (
+				BB00000200000001 /* TalkBridgeClipApp.swift */,
+				BB00000200000002 /* ContentView.swift */,
+				BB00000200000003 /* IncomingCallView.swift */,
+				BB00000200000004 /* ActiveCallView.swift */,
+				BB00000200000005 /* EndedCallView.swift */,
+				BB00000200000006 /* AudioManager.swift */,
+				BB00000200000007 /* WebSocketManager.swift */,
+				BB00000200000008 /* APIClient.swift */,
+				BB00000200000009 /* CallManager.swift */,
+				BB0000020000000A /* Info.plist */,
+			);
+			path = TalkBridgeClip;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -97,18 +156,39 @@
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		BB00000400000001 /* TalkBridgeClip */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB00000800000001 /* Build configuration list for PBXNativeTarget "TalkBridgeClip" */;
+			buildPhases = (
+				BB00000900000001 /* Sources */,
+				BB00000600000001 /* Frameworks */,
+				BB0000000A000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TalkBridgeClip;
+			productName = TalkBridgeClip;
+			productReference = BB00000500000001 /* TalkBridgeClip.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		504EC2FC1FED79650016851F /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastSwiftUpdateCheck = 0920;
+				LastSwiftUpdateCheck = 1500;
 				LastUpgradeCheck = 0920;
 				TargetAttributes = {
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
+						ProvisioningStyle = Automatic;
+					};
+					BB00000400000001 = {
+						CreatedOnToolsVersion = 15.0;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -130,6 +210,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				BB00000400000001 /* TalkBridgeClip */,
 			);
 		};
 /* End PBXProject section */
@@ -148,6 +229,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BB0000000A000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -156,6 +244,23 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				AA000001AABB000000000001 /* AudioRoutePlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB00000900000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB00000100000001 /* TalkBridgeClipApp.swift in Sources */,
+				BB00000100000002 /* ContentView.swift in Sources */,
+				BB00000100000003 /* IncomingCallView.swift in Sources */,
+				BB00000100000004 /* ActiveCallView.swift in Sources */,
+				BB00000100000005 /* EndedCallView.swift in Sources */,
+				BB00000100000006 /* AudioManager.swift in Sources */,
+				BB00000100000007 /* WebSocketManager.swift in Sources */,
+				BB00000100000008 /* APIClient.swift in Sources */,
+				BB00000100000009 /* CallManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -297,6 +402,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9323593CHL;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -305,7 +411,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
-				PRODUCT_BUNDLE_IDENTIFIER = com.talkbridge.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rahimovanton.talkbridge;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
@@ -319,6 +425,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9323593CHL;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -326,7 +433,51 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.talkbridge.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rahimovanton.talkbridge;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BB0000000B000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TalkBridgeClip/TalkBridgeClip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9323593CHL;
+				INFOPLIST_FILE = TalkBridgeClip/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rahimovanton.talkbridge.receiver;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BB0000000B000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TalkBridgeClip/TalkBridgeClip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9323593CHL;
+				INFOPLIST_FILE = TalkBridgeClip/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rahimovanton.talkbridge.receiver;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
@@ -351,6 +502,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BB00000800000001 /* Build configuration list for PBXNativeTarget "TalkBridgeClip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB0000000B000001 /* Debug */,
+				BB0000000B000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
