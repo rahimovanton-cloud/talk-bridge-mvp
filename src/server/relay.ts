@@ -187,9 +187,9 @@ export async function createRelay(
               input_audio_transcription: { model: "whisper-1" },
               turn_detection: {
                 type: "server_vad",
-                silence_duration_ms: 800,
-                prefix_padding_ms: 400,
-                threshold: 0.4,
+                silence_duration_ms: 100,
+                prefix_padding_ms: 100,
+                threshold: 0.5,
               },
             },
           }));

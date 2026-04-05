@@ -28,17 +28,16 @@ let ringerCtx = null;
 let ringerTimer = null;
 let answered = false;
 
-/* ── Audio context needs user gesture on iOS ── */
-let audioUnlocked = false;
-function unlockAudio() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  try {
-    ringerCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (ringerCtx.state === "suspended") ringerCtx.resume();
-  } catch { /* no audio support */ }
-}
+/* ── Audio context — create eagerly, resume on gesture ── */
+try {
+  ringerCtx = new (window.AudioContext || window.webkitAudioContext)();
+} catch { /* no audio support */ }
 
+function unlockAudio() {
+  if (ringerCtx && ringerCtx.state === "suspended") {
+    ringerCtx.resume().catch(() => {});
+  }
+}
 document.addEventListener("touchstart", unlockAudio, { once: true });
 document.addEventListener("click", unlockAudio, { once: true });
 
@@ -109,9 +108,13 @@ function initSwipe(railId, thumbId, onComplete) {
 function startRinging() {
   incomingInfo.classList.add("shaking");
 
+  // Try to vibrate as fallback for no-audio scenarios
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+
   function burst() {
     if (answered || !ringerCtx || ringerCtx.state === "closed") return;
-    if (ringerCtx.state === "suspended") ringerCtx.resume();
+    if (ringerCtx.state === "suspended") ringerCtx.resume().catch(() => {});
+    if (ringerCtx.state !== "running") return; // skip sound if still suspended
     const t = ringerCtx.currentTime;
     [0, 0.15].forEach((off) => {
       const o = ringerCtx.createOscillator();
@@ -130,6 +133,7 @@ function startRinging() {
   burst();
   ringerTimer = setInterval(() => {
     if (answered) { clearInterval(ringerTimer); return; }
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
     burst();
     incomingInfo.classList.remove("shaking");
     void incomingInfo.offsetWidth;

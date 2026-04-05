@@ -21,6 +21,7 @@ button { border: 0; cursor: pointer; }
 
 /* ============================================
    RECEIVER (собеседник) — fullscreen photo bg
+   Полностью резиновая вёрстка: vh/vw/%, без px-констант
    ============================================ */
 
 .receiver-body { background: #000; }
@@ -55,102 +56,112 @@ button { border: 0; cursor: pointer; }
   z-index: 1;
 }
 
-/* Use inline display style for switching, no .active/.hidden conflict */
 .receiver-view {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100dvh; /* dynamic viewport height — учитывает адресную строку */
   position: absolute;
   inset: 0;
+  overflow: hidden;
 }
 
-.rv-top { flex: 1; }
+/* Распорка сверху — занимает всё свободное место, прижимая контент вниз */
+.rv-top { flex: 1; min-height: 0; }
 
 .incoming-info {
   text-align: center;
-  padding: 0 24px 24px;
+  padding: 0 5vw 2vh;
+  flex-shrink: 0;
 }
 
 .incoming-name {
-  font-size: 48px;
+  font-size: clamp(1.5rem, 7vw, 3rem);
   font-weight: 700;
   letter-spacing: -0.03em;
-  text-shadow: 0 2px 24px rgba(0,0,0,0.6);
+  text-shadow: 0 0.3vh 3vh rgba(0,0,0,0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90vw;
+  margin: 0 auto;
 }
 
 .incoming-copy {
   color: rgba(255,255,255,0.7);
-  font-size: 17px;
-  margin-top: 6px;
-  text-shadow: 0 1px 8px rgba(0,0,0,0.5);
+  font-size: clamp(0.8rem, 3.5vw, 1.1rem);
+  margin-top: 0.8vh;
+  text-shadow: 0 1px 0.8vh rgba(0,0,0,0.5);
 }
 
 .rv-bottom {
-  padding: 0 20px 40px;
+  padding: 0 5vw calc(2.5vh + env(safe-area-inset-bottom, 0px));
+  flex-shrink: 0;
 }
 
 .rv-center {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 12px;
-  padding: 0 24px;
+  gap: 1.5vh;
+  padding: 0 5vw;
+  min-height: 0;
 }
 
 .rv-status {
-  font-size: 36px;
+  font-size: clamp(1.4rem, 6vw, 2.25rem);
   font-weight: 700;
   letter-spacing: -0.03em;
-  text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+  text-shadow: 0 0.3vh 2.5vh rgba(0,0,0,0.5);
 }
 
 .rv-timer {
   font-family: var(--display);
-  font-size: clamp(56px, 16vw, 100px);
+  font-size: clamp(2.5rem, 14vw, 6rem);
   line-height: 0.95;
   letter-spacing: -0.06em;
-  text-shadow: 0 4px 30px rgba(0,0,0,0.4);
+  text-shadow: 0 0.5vh 3.5vh rgba(0,0,0,0.4);
 }
 
 .rv-substatus {
   color: rgba(255,255,255,0.6);
-  font-size: 15px;
+  font-size: clamp(0.75rem, 3vw, 0.95rem);
 }
 
 /* end screen */
 .end-icon {
-  width: 80px;
-  height: 80px;
+  width: min(10vh, 80px);
+  height: min(10vh, 80px);
   border-radius: 50%;
   background: rgba(50, 212, 111, 0.2);
   display: grid;
   place-items: center;
-  font-size: 36px;
+  font-size: clamp(1.4rem, 5vw, 2.25rem);
   color: var(--green);
-  margin-bottom: 16px;
+  margin-bottom: 2vh;
 }
 
 .end-app-link {
   display: inline-block;
-  margin-top: 16px;
-  padding: 14px 32px;
+  margin-top: 2vh;
+  padding: 1.8vh 8vw;
   border-radius: 999px;
   background: rgba(255,255,255,0.12);
   color: white;
   text-decoration: none;
   font-weight: 600;
-  font-size: 16px;
+  font-size: clamp(0.8rem, 3.5vw, 1rem);
 }
 
 /* shake animation */
 @keyframes shake-pulse {
   0%   { transform: translateX(0); }
-  10%  { transform: translateX(-5px); }
-  20%  { transform: translateX(4px); }
-  30%  { transform: translateX(-3px); }
-  40%  { transform: translateX(2px); }
+  10%  { transform: translateX(-1vw); }
+  20%  { transform: translateX(0.8vw); }
+  30%  { transform: translateX(-0.6vw); }
+  40%  { transform: translateX(0.4vw); }
   50%  { transform: translateX(0); }
   100% { transform: translateX(0); }
 }
@@ -161,26 +172,27 @@ button { border: 0; cursor: pointer; }
 
 /* ============================================
    SWIPE RAIL (shared — receiver & client)
+   Высота и thumb — пропорциональны экрану
    ============================================ */
 
 .swipe-rail {
   position: relative;
   width: 100%;
-  height: 72px;
+  height: clamp(3rem, 9vh, 4.5rem);
   border-radius: 999px;
   background: rgba(255,255,255,0.12);
   overflow: hidden;
   display: flex;
   align-items: center;
-  padding: 4px;
+  padding: 0.5vh;
 }
 
 .swipe-rail-fill {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  width: 64px;
+  top: 0.5vh;
+  bottom: 0.5vh;
+  left: 0.5vh;
+  width: 15%;
   border-radius: 999px;
   background: rgba(255,255,255,0.08);
   transition: width 0.05s linear;
@@ -199,20 +211,21 @@ button { border: 0; cursor: pointer; }
   width: 100%;
   text-align: center;
   color: rgba(255,255,255,0.5);
-  font-size: 15px;
+  font-size: clamp(0.7rem, 3vw, 0.95rem);
   pointer-events: none;
 }
 
 .swipe-rail-thumb {
   position: relative;
   z-index: 2;
-  width: 64px;
-  height: 64px;
+  /* Квадрат, вписанный в рельсу с зазором */
+  width: calc(clamp(3rem, 9vh, 4.5rem) - 1vh);
+  height: calc(clamp(3rem, 9vh, 4.5rem) - 1vh);
   border-radius: 50%;
   display: grid;
   place-items: center;
   color: white;
-  font-size: 26px;
+  font-size: clamp(1.1rem, 4vw, 1.6rem);
   flex-shrink: 0;
   touch-action: none;
   user-select: none;
