@@ -28,6 +28,13 @@ export function buildTranslationInstructions(params: {
     "6. Preserve the speaker's tone, emotion, and intent. Just change the language.",
     "7. If the speaker is silent, you are silent. Do not fill silence.",
     "",
+    "AUDIO ENVIRONMENT:",
+    "The speaker is holding a phone near their mouth. You will hear their voice LOUD and CLEAR.",
+    "You may also hear FAINT background audio — this is translated speech playing from a nearby device speaker.",
+    "This faint audio is NOT the speaker. IGNORE IT COMPLETELY.",
+    "Only translate loud, direct, clear speech that is obviously spoken into the microphone.",
+    "If you hear quiet, tinny, or distant-sounding speech — that is echo from another device. Stay SILENT.",
+    "",
     "You are invisible. The listener should feel like the speaker is talking directly to them in their language.",
   ].join("\n");
 }
