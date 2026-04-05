@@ -1,3 +1,13 @@
+/**
+ * Route audio to earpiece (native Capacitor only, no-op in browser).
+ */
+export function setEarpiece() {
+  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AudioRoute) {
+    return window.Capacitor.Plugins.AudioRoute.setEarpiece();
+  }
+  return Promise.resolve();
+}
+
 export const MODEL_LABELS = {
   mini: "gpt-4o-mini-realtime-preview",
   full: "gpt-4o-realtime-preview",

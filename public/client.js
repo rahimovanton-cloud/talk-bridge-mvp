@@ -7,6 +7,7 @@ import {
   fetchJson,
   formatDuration,
   languageHint,
+  setEarpiece,
 } from "/shared.js";
 
 const tabBtns = [...document.querySelectorAll(".tab-btn")];
@@ -359,6 +360,7 @@ async function startConversation() {
   callSubstatus.textContent = "Запрашиваем микрофон.";
 
   try {
+    await setEarpiece(); // route to earpiece on native, no-op in browser
     await ensureMic();
     callSubstatus.textContent = "Микрофон получен. Подключаем перевод.";
 

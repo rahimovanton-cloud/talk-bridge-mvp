@@ -6,6 +6,7 @@ import {
   fetchJson,
   formatDuration,
   languageHint,
+  setEarpiece,
 } from "/shared.js";
 
 const incomingView = document.getElementById("incomingView");
@@ -205,6 +206,7 @@ async function acceptCall() {
   console.log("[receiver] AudioContext created during swipe gesture");
 
   try {
+    await setEarpiece(); // route to earpiece on native, no-op in browser
     await ensureMic();
     await fetchJson("/api/session/accept", {
       method: "POST",
