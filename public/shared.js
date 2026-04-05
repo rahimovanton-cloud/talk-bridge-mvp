@@ -88,6 +88,11 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
   }
   console.log("[audio] connectMediaStream: state=" + audioCtx.state + " rate=" + audioCtx.sampleRate);
 
+  // Playback volume — тихо, чтобы чужой микрофон не ловил наш динамик
+  var playbackGain = audioCtx.createGain();
+  playbackGain.gain.value = 0.3;
+  playbackGain.connect(audioCtx.destination);
+
   var micSource = audioCtx.createMediaStreamSource(micStream);
   var captureCleanup;
   var micChunksSent = 0;
@@ -206,7 +211,7 @@ export async function connectMediaStream(ws, micStream, audioCtx) {
 
     var source = audioCtx.createBufferSource();
     source.buffer = buffer;
-    source.connect(audioCtx.destination);
+    source.connect(playbackGain);
 
     var now = audioCtx.currentTime;
     if (nextPlayTime < now) {

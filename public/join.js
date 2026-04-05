@@ -249,7 +249,9 @@ async function acceptCall() {
 
 async function ensureMic() {
   if (micStream) return;
-  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
+  });
 }
 
 function startTimer() {

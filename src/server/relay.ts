@@ -189,7 +189,7 @@ export async function createRelay(
                 type: "server_vad",
                 silence_duration_ms: 100,
                 prefix_padding_ms: 100,
-                threshold: 0.5,
+                threshold: 0.7,
               },
             },
           }));
